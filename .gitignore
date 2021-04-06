@@ -1,0 +1,8 @@
+.DS_Store
+/.idea/dictionaries
+/.idea/misc.xml
+/.idea/PyToolsAL.iml
+/.idea/vcs.xml
+/.idea/workspace.xml
+/pytoolsAL/__pycache__
+/pytoolsAL.egg-info/requires.txt

@@ -14,7 +14,9 @@ pyToolsAL.egg-info/top_level.txt
 pytoolsAL/__init__.py
 pytoolsAL/_version.py
 pytoolsAL/image.py
+pytoolsAL/math.py
 pytoolsAL.egg-info/PKG-INFO
 pytoolsAL.egg-info/SOURCES.txt
 pytoolsAL.egg-info/dependency_links.txt
+pytoolsAL.egg-info/requires.txt
 pytoolsAL.egg-info/top_level.txt

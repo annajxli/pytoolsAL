@@ -5,10 +5,51 @@ import numbers
 import warnings
 
 
+def norm(r):
+    """
+    Normalizes array in (array - mean)/(std)
+    Args:
+        r: input array to normalize
+
+    Returns:
+        normed: output array
+
+    """
+    normed = np.divide((r - np.mean(r)), np.std(r))
+    return normed
+
+
+def getIntCeilSqrt(n):
+    """
+    Mostly for plotting lots of frames in a square
+    Get ceiling of sqrt in integer form
+    Args:
+        n: input number
+
+    Returns:
+        sqrt: integer of ceiling of sqrt of input
+
+    """
+    sqrt = int(np.ceil(np.sqrt(n)))
+    return sqrt
+
+def bootstrap(x, n_reps):
+    """
+    Returns x, resampled with replacement n_reps times
+    Args:
+        x:
+        n_reps:
+
+    Returns:
+        boot_n
+    """
+    boot_n = np.random.choice(x, (len(x), n_reps))
+    return boot_n
+
+
 def ci(a, bounds=95, axis=None):
     """
-    Taken from seaborn utils.py
-    Return a percentile range from an array of values
+    Return a percentile range
 
     Args:
         a (np.ndarray): array to get CIs from
@@ -19,7 +60,7 @@ def ci(a, bounds=95, axis=None):
         Percentile range
 
     """
-    p = 50 - bounds / 2, 50 + bounds / 2
+    p = 50-bounds/2, 50+bounds/2
     return np.percentile(a, p, axis)
 
 
@@ -48,7 +89,7 @@ def linear_fit(x, y):
     grid_c = np.c_[np.ones(len(grid)), grid]
     yhat = grid_c.dot(reg_func(X, Y))
 
-    beta_boots = bootstrap(X, Y, func=reg_func, n_boot=1000).T
+    beta_boots = bootstrap_sb(X, Y, func=reg_func, n_boot=1000).T
     yhat_boots = grid_c.dot(beta_boots).T
 
     rsq = get_rsquared(x, y, grid, yhat)
@@ -91,7 +132,7 @@ def get_rsquared(x, y, fit_x, fit_y):
     return rsq
 
 
-def bootstrap(*args, **kwargs):
+def bootstrap_sb(*args, **kwargs):
     """
     Taken from seaborn algorithms.py
     Resample one or more arrays with replacement and store aggregate values.
