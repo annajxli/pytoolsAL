@@ -5,15 +5,10 @@ import os
 import imageio
 import numpy as np
 import tifffile
-import matplotlib as mpl
-import matplotlib.pyplot as plt
 from skimage import transform
 
-a = np.asarray
-r_ = np.r_
 
-
-def makePositive(im):
+def make_positive(im):
     """
     Scale image stack to start at 0
     Args:
@@ -29,7 +24,42 @@ def makePositive(im):
     return im
 
 
-def SI_deinterleave(infile, save=False, outfile=None):
+def reconstruct_from_svd(svd_temp, svd_spat, t, x=None, y=None, comps=200):
+    """
+    Reconstruct raw image from svd analysis
+    Args:
+        svd_temp: temporal components
+        svd_spat: spatial components
+        t: frame range
+        x: x pixel range
+        y: y pixel range
+        comps: number of svd components to use for reconstr
+
+    Returns:
+        recon_im: reconstructed image
+    """
+    # for now - reconstructing full image in x/y, add sub later
+
+    # get image shapes
+    px, py, _spat_comps = svd_spat.shape
+
+    # setup the reshape
+    spat_collapse = (px * py, comps)
+    svd_spat_collapse = svd_spat[:, :, :comps].reshape(spat_collapse)
+
+    # multiply out
+    recon_im = np.dot(svd_spat_collapse, svd_temp[t, :comps].T)
+
+    # then reshape into pixel space
+    recon_im = recon_im.reshape(px, py, len(t))
+
+    # then transpose such that the T dimension is first
+    recon_im = recon_im.transpose(2, 0, 1)
+
+    return recon_im
+
+
+def scanimage_deinterleave(infile, save=False, outfile=None):
     """
     ScanImage dual-channel .tif files come interleaved - this splits into two channels
     Args:
@@ -52,15 +82,15 @@ def SI_deinterleave(infile, save=False, outfile=None):
     return c1, c2
 
 
-def SI_batch_resave(infile, outfile, nFrChunk=300, rewriteOk=False, downscaleTuple=None):
+def scanimage_batch_resave(infile, outfile, n_fr_chunk=300, rewrite_ok=False, downscale_tuple=None):
     """
 
     Args:
         infile (str): path to input tif
         outfile (str): desired path to output tif
-        nFrChunk (int): number of frames to load into memory at once
-        rewriteOk (bool): whether or not to rewrite existing tif
-        downscaleTuple (tuple, optional): tuple to downscale image by in (z, x, y)
+        n_fr_chunk (int): number of frames to load into memory at once
+        rewrite_ok (bool): whether or not to rewrite existing tif
+        downscale_tuple (tuple, optional): tuple to downscale image by in (z, x, y)
 
     Returns:
         batched image
@@ -68,40 +98,40 @@ def SI_batch_resave(infile, outfile, nFrChunk=300, rewriteOk=False, downscaleTup
     """
 
     if os.path.isfile(outfile):
-        assert rewriteOk, 'outfile already exists but rewriteOk is False'
+        assert rewrite_ok, 'outfile already exists but rewriteOk is False'
         os.remove(outfile)
         print('original outfile exists - deleting.')
 
     with tifffile.TiffFile(infile) as tif:
         T = len(tif.pages)
-        nR,nC = tif.pages[0].shape
+        nR, nC = tif.pages[0].shape
 
-    if downscaleTuple is not None:
-        nR = int(nR/downscaleTuple[1])
-        nC = int(nC/downscaleTuple[2])
+    if downscale_tuple is not None:
+        nR = int(nR / downscale_tuple[1])
+        nC = int(nC / downscale_tuple[2])
 
-    im = np.zeros((T,nR,nC))
+    im = np.zeros((T, nR, nC))
 
-    for fr in r_[0:T:nFrChunk]:
-        if fr+nFrChunk <= T:
-            ix = r_[fr:fr+nFrChunk]
-            chunk = tifffile.imread(infile,key=ix)
-            print(fr+nFrChunk, end=' ')
+    for fr in np.r_[0:T:n_fr_chunk]:
+        if fr+n_fr_chunk <= T:
+            ix = np.r_[fr:fr + n_fr_chunk]
+            chunk = tifffile.imread(infile, key=ix)
+            print(fr + n_fr_chunk, end=' ')
 
-            if downscaleTuple is not None:
-                chunk = transform.downscale_local_mean(chunk, downscaleTuple)
+            if downscale_tuple is not None:
+                chunk = transform.downscale_local_mean(chunk, downscale_tuple)
 
-            im[ix,:,:] = chunk.astype('int16')
+            im[ix, :, :] = chunk.astype('int16')
 
-        if fr+nFrChunk > T:
-            ix = r_[fr:T]
+        if fr+n_fr_chunk > T:
+            ix = np.r_[fr:T]
             chunk = tifffile.imread(infile, key=ix)
             print(T)
 
-            if downscaleTuple is not None:
-                chunk = transform.downscale_local_mean(chunk, downscaleTuple)
+            if downscale_tuple is not None:
+                chunk = transform.downscale_local_mean(chunk, downscale_tuple)
 
-            im[ix,:,:] = chunk.astype('int16')
+            im[ix, :, :] = chunk.astype('int16')
 
     im = im.astype('int16')
     tifffile.imsave(outfile, im, bigtiff=True)
@@ -124,17 +154,16 @@ def avi_to_gif(path_to_im, fps=30.0):
 
     """
 
-    imPath = path_to_im
-    gifOut = imPath.replace('.avi', '.gif')
+    impath = path_to_im
+    gif_out = impath.replace('.avi', '.gif')
+
+    avi = imageio.mimread(impath)
+    imageio.mimsave(gif_out, avi, fps=fps)
+
+    print('Done. Saved gif to {}'.format(gif_out))
 
 
-    avi = imageio.mimread(imPath)
-    imageio.mimsave(gifOut, avi, fps=fps)
-
-    print('Done. Saved gif to {}'.format(gifOut))
-
-
-def get_response_map_1stim(im, nReps, baseFrs, stimFrs):
+def get_response_map_1stim(im, n_reps, base_frs, stim_frs):
     """
     Create df/f map from image stack with one repeated stim
     Returns:
@@ -143,18 +172,18 @@ def get_response_map_1stim(im, nReps, baseFrs, stimFrs):
     print('stack shape: {}'.format(im.shape))
     nR, nC = im.shape[-2:]
 
-    assert im.shape[0] % nReps == 0, 'Image length must be divisible by nReps'
-    nFrsPerRep = int(im.shape[0]/nReps)
+    assert im.shape[0] % n_reps == 0, 'Image length must be divisible by nReps'
+    n_frs_per_rep = int(im.shape[0] / n_reps)
 
-    imR = im.reshape(nReps, nFrsPerRep, nR, nC)
-    imAvg = np.mean(imR, axis=0)
+    im_r = im.reshape(n_reps, n_frs_per_rep, nR, nC)
+    im_avg = np.mean(im_r, axis=0)
 
-    imAvg = makePositive(imAvg)
+    im_avg = make_positive(im_avg)
 
-    f0 = np.mean(imAvg[baseFrs, :], axis=0)
-    stimF = np.mean(imAvg[stimFrs, :], axis=0)
+    f0 = np.mean(im_avg[base_frs, :], axis=0)
+    stim_fluo = np.mean(im_avg[stim_frs, :], axis=0)
 
-    dff_2d = 100*(stimF-f0)/f0
-    dff_mov = 100*(imAvg-f0)/f0
+    dff_2d = 100*(stim_fluo-f0)/f0
+    dff_mov = 100*(im_avg-f0)/f0
 
     return dff_2d, f0, dff_mov

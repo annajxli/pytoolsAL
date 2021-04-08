@@ -14,3 +14,6 @@
 /pytoolsAL.egg-info/PKG-INFO
 /pytoolsAL.egg-info/SOURCES.txt
 /pytoolsAL.egg-info/top_level.txt
+/build
+/build/lib
+/dist

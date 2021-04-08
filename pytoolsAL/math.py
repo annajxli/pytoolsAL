@@ -1,8 +1,9 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import numpy as np
 import numbers
 import warnings
+import sklearn
 
 
 def norm(r):
@@ -19,7 +20,91 @@ def norm(r):
     return normed
 
 
-def getIntCeilSqrt(n):
+class ReducedRankRegressor(object):
+    """
+    Reduced rank regressor
+    Args:
+        - X: n-by-d matrix of features.
+        - Y: n-by-D matrix of targets
+        - rank: either 'max' or int; rank constraint
+        - reg: regularization parameter (optional)
+
+    """
+    def __init__(self, X, Y, rank=None, reg=None):
+        if np.size(np.shape(X)) == 1:
+            X = np.reshape(X, (-1, 1))
+        if np.size(np.shape(Y)) == 1:
+            Y = np.reshape(Y, (-1, 1))
+
+        max_rank = np.min(X.shape + Y.shape)
+        if rank is 'max':
+            rank = max_rank
+        else:
+            if rank < 0 or rank > max_rank:
+                raise ValueError(f'rank cannot be negative nor greater than minimum input dimension: {max_rank}')
+        self.rank = rank
+
+        if reg is None:
+            reg = 0
+
+        self.X = X
+        self.Y = Y
+        self.reg = reg
+
+    def fit(self):
+        """
+        Fits reduced rank matrix
+
+        A is shape [rank x Ydim2]
+        B is shape [Xdim2 x rank]
+
+        """
+        X = self.X
+        Y = self.Y
+        rank = self.rank
+        reg = self.reg
+        reg_eye = reg * np.eye(np.size(X, 1))
+
+        # X = np.vstack((X, reg_eye))
+        # Y = np.vstack((Y, np.zeros((X.shape[1], Y.shape[1]))))
+
+        CXX = np.dot(X.T, X) + reg_eye
+        CXY = np.dot(X.T, Y)
+
+        self.CXX = CXX
+        self.CXY = CXY
+
+        _U, _S, V = np.linalg.svd(np.dot(CXY.T, np.dot(np.linalg.pinv(CXX), CXY)))
+
+        self.A = V[0:rank, :].T
+        self.B = np.dot(np.linalg.pinv(CXX), np.dot(CXY, self.A)).T
+
+    def predict(self, X):
+        """
+        Predict Y from X based on fit A and B above
+        """
+        A = self.A
+        B = self.B
+
+        if np.size(np.shape(X)) == 1:
+            X = np.reshape(X, (-1, 1))
+        pred = np.dot(X, np.dot(A, B).T)
+        # convert from matrix to array and transpose - easier for later
+        pred = np.asarray(pred.T)
+        return pred
+
+
+def score_mse(y_true, y_pred):
+    score = sklearn.metrics.mean_squared_error(y_true, y_pred)
+    return score
+
+
+def score_var_explained(y_true, y_pred, multioutput=None):
+    score = sklearn.metrics.explained_variance_score(y_true, y_pred, multioutput=multioutput)
+    return score
+
+
+def get_int_ceil_sqrt(n):
     """
     Mostly for plotting lots of frames in a square
     Get ceiling of sqrt in integer form
@@ -32,6 +117,7 @@ def getIntCeilSqrt(n):
     """
     sqrt = int(np.ceil(np.sqrt(n)))
     return sqrt
+
 
 def bootstrap(x, n_reps):
     """

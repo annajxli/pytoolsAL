@@ -1,28 +1,39 @@
+#!/usr/bin/env python3
+"""
+pytoolsAL toolbox
+
+usage: pip install -e . --user
+OR sudo: sudo pip install -e .
+"""
 import os
-from setuptools import setup
+import setuptools
 
-# read __version__
-filename = 'pytoolsAL/_version.py';
-exec (compile(open(filename, "rb").read(), filename, 'exec'), globals(), locals())
+filename = 'pytoolsAL/_version.py'
+exec(compile(open(filename, 'rb').read(), filename, 'exec'), globals(), locals())
 
+with open('README.md', 'r') as f:
+    long_description = f.read()
 
-def read(fname):
-    return open(os.path.join(os.path.dirname(__file__), fname)).read()
-
-
-setup(
-    name="pytoolsAL",
+setuptools.setup(
+    name='pytoolsAL',
     version=__version__,
-    author="Anna Li",
-    author_email="annajxli@gmail.com",
-    description="misc personal Python utilities",
-    license="none",
-    keywords="",
-    url="",
+    author='Anna Li',
+    author_email='annajxli@gmail.com',
+    description='misc personal Python utilities',
+    long_description=long_description,
+    url='https://github.com/annajxli/pytoolsAL',
     packages=['pytoolsAL'],
     package_dir={'pytoolsAL': 'pytoolsAL'},
-    long_description=read('README.md'),
     classifiers=[
-        "Development Status :: 3 - Alpha",
-    ], install_requires=['matplotlib', 'scikit-image', 'tifffile', 'numpy', 'imageio']
+        'Development Status :: 3 - Alpha',
+    ],
+    install_requires=[
+        'numpy',
+        'scikit-image',
+        'setuptools',
+        'scikit-learn',
+        'imageio',
+        'tifffile',
+        'matplotlib',
+        'ipywidgets']
 )
