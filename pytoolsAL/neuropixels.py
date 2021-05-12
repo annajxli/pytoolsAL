@@ -7,12 +7,13 @@ import os
 
 
 class RainierData:
-    def __init__(self, datadir, mn, td, probe=None):
+    def __init__(self, datadir, mn, td, en, probe=None):
         if isinstance(datadir, str):
             datadir = pathlib.Path(datadir)
         self.datadir = datadir
         self.mn = mn
         self.td = td
+        self.en = en
         self.probe = probe
 
         self._get_session_dir()
@@ -24,10 +25,9 @@ class RainierData:
 
     def _get_session_dir(self):
         """
-        Find dir corresponding to this mouse and date
-        Explicitly passing the 1 folder for now. Might want to change later.
+        Find dir corresponding to this mouse, date, experiment
         """
-        sessdir = self.datadir / self.mn / self.td / '1'
+        sessdir = self.datadir / self.mn / self.td / self.en
         if not os.path.isdir(sessdir):
             raise FileNotFoundError(f'{sessdir} not found. Exists?')
         else:
@@ -54,7 +54,7 @@ class RainierData:
         else:
             # if just one (expected), set path variables
             p_sub = os.listdir(self.sessdir/probedir[0])
-            self.probedir = self.sessdir/probedir[0]/p_sub[0]
+            self.probedir = self.sessdir/probedir[0]/p_sub[-1]
 
     def load_npy_files(self, dtype, flist):
         dtypes_allow = ['ephys', 'wf', 'sync']
@@ -126,21 +126,24 @@ class RainierData:
         self.neurons = neurons
         self.spikes = spks/3e4  # convert to s: remind myself why this is 3e4
 
-    def bin_spikes(self, bins, set_self_matrix=False):
+    def bin_spikes(self, bins, spks=None, set_self_matrix=False):
         """
         yep
 
         Args:
             bins: desired bin edges
-            set_self_matrix: whether or not to set internal spkmat argument
+            spks: (optional) external spike times, e.g. if shuffled
+            set_self_matrix: (optional) whether or not to set internal spkmat argument
                 e.g. False when using this for spike rate
                 if False, returns matrix. if True, returns None.
 
         Returns:
             spks_mat: array in shape [neurons, bins]
         """
-        self.separate_spikes()
-        spks = self.spikes
+        if spks is None:
+            self.separate_spikes()
+            spks = self.spikes
+
         spks_binned = []
         for neur in spks:
             hist, edges = np.histogram(neur, bins, density=False)

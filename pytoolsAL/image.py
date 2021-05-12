@@ -24,6 +24,10 @@ def make_positive(im):
     return im
 
 
+def rgb_to_gray(rgb):
+    return np.dot(rgb[...,:3], [0.2989, 0.5870, 0.1140])
+
+
 def reconstruct_from_svd(svd_temp, svd_spat, t, x=None, y=None, comps=200):
     """
     Reconstruct raw image from svd analysis
