@@ -104,6 +104,42 @@ def score_var_explained(y_true, y_pred, multioutput=None):
     return score
 
 
+def continuous_kfold(x, n_splits=10, drop_remainder=False):
+    """
+    defines indexes for cross validation
+    for remainder: adds it to the final one
+
+    Args:
+        x: input vector, only length is pulled from this
+        n_splits: number of splits to generate
+        drop_remainder: whether to drop the last values if uneven division
+
+    Returns:
+        splits: n_splits-dimensional array of indexes
+    """
+    length = len(x)
+    len_splits = length // n_splits
+    extra = length % n_splits
+
+    splits = []
+    for r in range(n_splits):
+        # for the last split, add the remainder unless otherwise specified
+        if r == n_splits-1:
+            if drop_remainder:
+                ixs = np.r_[r*len_splits:(r+1)*len_splits]
+                splits.append(ixs)
+            else:
+                ixs = np.r_[r*len_splits:(r+1)*len_splits+extra]
+                splits.append(ixs)
+
+        # otherwise do a normal split
+        else:
+            ixs = np.r_[r*len_splits:(r+1)*len_splits]
+            splits.append(ixs)
+
+    return splits
+
+
 def get_int_ceil_sqrt(n):
     """
     Mostly for plotting lots of frames in a square

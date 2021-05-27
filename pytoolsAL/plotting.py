@@ -38,6 +38,25 @@ def apply_image_defaults(ax):
     ax.spines['left'].set_visible(False)
     ax.spines['bottom'].set_visible(False)
 
+    return ax
+
+def apply_heatmap_defaults(ax):
+    """
+    since the default style sheet is ugly for heatmaps
+    pass the ax object to style it better
+    Args:
+        ax: matplotlib axis object where heatmap is plotted
+
+    Returns:
+        ax: style-adjusted heatmap axis
+
+    """
+    ax.tick_params(axis='both', which='both', length=0)
+    ax.spines['left'].set_visible(False)
+    ax.spines['bottom'].set_visible(False)
+
+    return ax
+
 
 def apply_mulitple_locator(ax, multiple, which='both'):
     """
