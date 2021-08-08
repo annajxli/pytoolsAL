@@ -8,6 +8,20 @@ import tifffile
 from skimage import transform
 
 
+def percentiles(im, lower=0.5, upper=99.5):
+    """
+
+    Args:
+        im:
+        lower:
+        upper:
+
+    Returns:
+
+    """
+    return [np.percentile(im, lower), np.percentile(im, upper)]
+
+
 def make_positive(im):
     """
     Scale image stack to start at 0
@@ -28,7 +42,7 @@ def rgb_to_gray(rgb):
     return np.dot(rgb[...,:3], [0.2989, 0.5870, 0.1140])
 
 
-def reconstruct_from_svd(svd_temp, svd_spat, t, x=None, y=None, comps=200):
+def reconstruct_from_svd(svd_temp, svd_spat, t=None, x=None, y=None, comps=200):
     """
     Reconstruct raw image from svd analysis
     Args:
@@ -44,6 +58,9 @@ def reconstruct_from_svd(svd_temp, svd_spat, t, x=None, y=None, comps=200):
     """
     # for now - reconstructing full image in x/y, add sub later
 
+    # if no time range, use all
+    if t is None:
+        t = np.arange(svd_temp.shape[0])
     # get image shapes
     px, py, _spat_comps = svd_spat.shape
 

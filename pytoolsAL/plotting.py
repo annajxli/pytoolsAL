@@ -3,6 +3,7 @@
 import matplotlib as mpl
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
 import os
 
 
@@ -20,6 +21,12 @@ def apply_colorbar_defaults(cb):
     cb.outline.set_visible(False)
     cb.ax.tick_params(size=0, which='both')
     return cb
+
+
+def add_colorbar(ax, pos='right', size='5%', pad=0.15):
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes(pos, size=size, pad=pad)
+    return cax
 
 
 def apply_image_defaults(ax):
@@ -40,6 +47,7 @@ def apply_image_defaults(ax):
 
     return ax
 
+
 def apply_heatmap_defaults(ax):
     """
     since the default style sheet is ugly for heatmaps
@@ -58,18 +66,30 @@ def apply_heatmap_defaults(ax):
     return ax
 
 
-def apply_mulitple_locator(ax, multiple, which='both'):
+def apply_multiple_locator(ax, multiple_dict):
     """
     quick wrapper for setting tick locator
     Args:
         ax: matplotlib axis object
         multiple: int or list
-        which: 'x', 'y', or 'both'
+        which: 'x', 'y', 'both'
 
     Returns:
-        ax:
+        ax: matplotlib axis object
 
     """
+    for axis in multiple_dict.keys():
+        if multiple_dict[axis] is not None:
+            if axis == 'x':
+                xmult = multiple_dict[axis]
+                ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(xmult))
+            if axis == 'y':
+                ymult = multiple_dict[axis]
+                ax.yaxis.set_major_locator(mpl.ticker.MultipleLocator(ymult))
+
+    return ax
+
+
 def anim_to_file(anim, savepath, rewrite=False, fps=10, bitrate=-1):
     """
     Saves matplotlib animation object to file

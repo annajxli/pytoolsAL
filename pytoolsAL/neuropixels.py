@@ -7,15 +7,25 @@ import os
 
 
 class RainierData:
-    def __init__(self, datadir, mn, td, en, probe=None):
+    def __init__(self, datadir, mn, td, en, probe=None, label=None):
         if isinstance(datadir, str):
             datadir = pathlib.Path(datadir)
+
+        self.sessdir = None
         self.datadir = datadir
+        self.probedir = None
+
         self.mn = mn
         self.td = td
         self.en = en
         self.probe = probe
+        self.label = label
 
+        self.flipper_tstamps_sync = None
+        self.mean_offset = None
+        self.spkrate = None
+
+        self.spikes = None
         self._get_session_dir()
 
         if self.probe is not None:
@@ -53,8 +63,9 @@ class RainierData:
                              + ' Not equipped to handle.')
         else:
             # if just one (expected), set path variables
-            p_sub = os.listdir(self.sessdir/probedir[0])
-            self.probedir = self.sessdir/probedir[0]/p_sub[-1]
+            p_subs = os.listdir(self.sessdir/probedir[0])
+            # p_sub = p_subs[probenum]
+            self.probedir = self.sessdir/probedir[0]
 
     def load_npy_files(self, dtype, flist):
         dtypes_allow = ['ephys', 'wf', 'sync']
@@ -144,11 +155,13 @@ class RainierData:
             self.separate_spikes()
             spks = self.spikes
 
-        spks_binned = []
-        for neur in spks:
+        spk_mat = np.zeros((np.max(self.neurons)+1, len(bins)-1))
+        # spk_mat[:] = np.nan
+
+        for iN, neur in enumerate(spks):
             hist, edges = np.histogram(neur, bins, density=False)
-            spks_binned.append(hist)
-        spk_mat = np.asarray(spks_binned)
+            neur_num = self.neurons[iN]
+            spk_mat[neur_num] = hist
 
         if set_self_matrix:
             self.spk_mat = spk_mat
@@ -159,9 +172,8 @@ class RainierData:
         """
         yep
         """
-        tstamps = self.flipper_tstamps_sync
-        sec_bins = np.arange(np.min(tstamps), np.max(tstamps), 1)
-        spkrate = np.mean(self.bin_spikes(sec_bins, set_self_matrix=False),
-                          axis=1)
+        end_time = np.ceil(np.max(self.npys['spike_times'] / 3e4))
+        sec_bins = np.arange(0, end_time, 1)
+        spkrate = np.mean(self.bin_spikes(sec_bins, set_self_matrix=False), axis=1)
 
         self.spkrate = spkrate
