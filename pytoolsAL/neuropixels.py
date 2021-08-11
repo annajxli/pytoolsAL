@@ -53,7 +53,7 @@ class RainierData:
         for i in os.listdir(self.sessdir):
             # look for all folders starting with probename
             if i.startswith(self.probe):
-                if os.path.isdir(self.sessdir/i):
+                if os.path.isdir(self.sessdir / i):
                     probedir.append(i)
         # check that only one folder exists (raise error if mult or none)
         if len(probedir) == 0:
@@ -63,9 +63,9 @@ class RainierData:
                              + ' Not equipped to handle.')
         else:
             # if just one (expected), set path variables
-            p_subs = os.listdir(self.sessdir/probedir[0])
+            p_subs = os.listdir(self.sessdir / probedir[0])
             # p_sub = p_subs[probenum]
-            self.probedir = self.sessdir/probedir[0]
+            self.probedir = self.sessdir / probedir[0]
 
     def load_npy_files(self, dtype, flist):
         dtypes_allow = ['ephys', 'wf', 'sync']
@@ -74,12 +74,26 @@ class RainierData:
                               + f'{dtypes_allow}')
         if dtype is 'ephys':
             for f in flist:
-                self.npys[f] = np.load(self.probedir/f'{f}.npy')
+                self.npys[f] = np.load(self.probedir / f'{f}.npy')
         if dtype in ['sync', 'wf']:
             for f in flist:
-                self.npys[f] = np.load(self.sessdir/f'{f}.npy')
+                self.npys[f] = np.load(self.sessdir / f'{f}.npy')
 
-    def sync_timestamps(self, sync1=None, sync2=None, timestamps2=None):
+    def find_flipper_offset(self):
+        npys = self.npys
+        sync1 = npys[f'{self.probe}_sync']
+        sync2 = npys['tl_sync']
+
+        offsets = sync1 - sync2
+        std = np.std(offsets)
+
+        if std > 1e-3:
+            warnings.warn(f'flipper offsets standard deviation is {std:4f}')
+
+        mean_offset = np.mean(offsets)
+        self.mean_offset = mean_offset
+
+    def sync_timestamps(self, timestamps2=None):
         """
         Use sync1 to identify offset from sync2 and adjust timestamps2.
         Default: usually want to sync imaging to probe, so sync1 is p_sync,
@@ -92,24 +106,16 @@ class RainierData:
         Returns:
             synced: timestamps2 adjusted to align with timestamps1
         """
+        self.find_flipper_offset()
+        mean_offset = self.mean_offset
         npys = self.npys
         if sync1 is None:
             warnings.warn(f'no args passed to sync_timestamps - defaulting to sync imaging to probe')
-            sync1 = npys[f'{self.probe}_sync']
-            sync2 = npys['tl_sync']
             timestamps2 = npys['corr/svdTemporalComponents_corr.Timestamps']
 
-        offsets = sync1 - sync2
-        std = np.std(offsets)
-
-        if std > 1e-3:
-            warnings.warn(f'flipper offsets standard deviation is {std:4f}')
-
-        mean_offset = np.mean(offsets)
         synced = (timestamps2 + mean_offset).reshape(-1)
 
         self.flipper_tstamps_sync = synced
-        self.mean_offset = mean_offset
 
     def separate_spikes(self):
         """
@@ -135,7 +141,7 @@ class RainierData:
         spks = np.asarray(spks, dtype='object')
 
         self.neurons = neurons
-        self.spikes = spks/3e4  # convert to s: remind myself why this is 3e4
+        self.spikes = spks / 3e4  # convert to s: remind myself why this is 3e4
 
     def bin_spikes(self, bins, spks=None, set_self_matrix=False):
         """
@@ -155,7 +161,7 @@ class RainierData:
             self.separate_spikes()
             spks = self.spikes
 
-        spk_mat = np.zeros((np.max(self.neurons)+1, len(bins)-1))
+        spk_mat = np.zeros((np.max(self.neurons) + 1, len(bins) - 1))
         # spk_mat[:] = np.nan
 
         for iN, neur in enumerate(spks):
