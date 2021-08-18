@@ -4,27 +4,19 @@ import matplotlib as mpl
 import numpy as np
 
 
-def datadir():
-    """
-    quick way to access data directory path
-    Returns: default data directory path
+class Globs:
+    def __init__(self, machine):
+        self.machine = machine
 
-    """
-    dd = Path('/Users/anna/Data/steinmetzlab')
-    return dd
+        if self.machine == 'labpc':
+            self.datadir = Path(r'C:\Users\anna\Data')
+            self.dataserver = Path(r'Z:\Subjects')
+            self.stylesheet = Path(r'C:\Users\anna\Repositories\pytoolsAL\styles\ALpres.mplstyle')
 
-
-def mplstylesheet():
-    """
-    quick way to access matplotlib stylesheet
-    Returns: default matplotlib stylesheet path
-
-    """
-    mss = Path('/Users/anna/Repositories/pytoolsAL/styles/ALpres.mplstyle')
-    return mss
-
-
-def cmap_blueblackred():
-    bbr = mpl.colors.LinearSegmentedColormap.from_list('bbr', np.load(
-        '/Users/anna/Repositories/pytoolsAL/styles/cmap_blueblackred.npy'))
-    return bbr
+        elif self.machine == 'macbook':
+            self.datadir = Path('/Users/anna/Data/steinmetzlab')
+            self.stylesheet = Path('/Users/anna/Repositories/pytoolsAL/styles/ALpres.mplstyle')
+            self.cmap_bbr = mpl.colors.LinearSegmentedColormap.from_list('bbr', np.load(
+                            '/Users/anna/Repositories/pytoolsAL/styles/cmap_blueblackred.npy'))
+        else:
+            raise ValueError('not a valid machine, try labpc or macbook')

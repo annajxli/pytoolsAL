@@ -31,13 +31,14 @@ class ReducedRankRegressor(object):
 
     """
     def __init__(self, X, Y, rank=None, reg=None):
+        print('initializing regressor...', end=' ')
         if np.size(np.shape(X)) == 1:
             X = np.reshape(X, (-1, 1))
         if np.size(np.shape(Y)) == 1:
             Y = np.reshape(Y, (-1, 1))
 
         max_rank = np.min(X.shape + Y.shape)
-        if rank is 'max':
+        if rank == 'max':
             rank = max_rank
         else:
             if rank < 0 or rank > max_rank:
@@ -50,6 +51,7 @@ class ReducedRankRegressor(object):
         self.X = X
         self.Y = Y
         self.reg = reg
+        print('done.')
 
     def fit(self):
         """
@@ -59,25 +61,30 @@ class ReducedRankRegressor(object):
         B is shape [Xdim2 x rank]
 
         """
+        print('fitting regressor...')
         X = self.X
         Y = self.Y
         rank = self.rank
         reg = self.reg
-        reg_eye = reg * np.eye(np.size(X, 1))
-
+        reg_eye = reg * np.eye(np.size(X, 1), dtype='uint8')
         # X = np.vstack((X, reg_eye))
         # Y = np.vstack((Y, np.zeros((X.shape[1], Y.shape[1]))))
 
+        print('setting CXX and CXY...', end=' ')
         CXX = np.dot(X.T, X) + reg_eye
         CXY = np.dot(X.T, Y)
 
         self.CXX = CXX
         self.CXY = CXY
 
+        print('computing SVD...', end = ' ')
         _U, _S, V = np.linalg.svd(np.dot(CXY.T, np.dot(np.linalg.pinv(CXX), CXY)))
 
+        print('done.')
+        print('setting A and B...', end=' ')
         self.A = V[0:rank, :].T
         self.B = np.dot(np.linalg.pinv(CXX), np.dot(CXY, self.A)).T
+        print('done.')
 
     def predict(self, X):
         """
@@ -155,6 +162,15 @@ def get_int_ceil_sqrt(n):
     return sqrt
 
 
+def rolling_average(x, w):
+    """
+    Args:
+        x: input array
+        w: averaging window size
+    """
+    return np.convolve(x, np.ones(w), 'valid') / w
+
+
 def bootstrap(x, n_reps):
     """
     Returns x, resampled with replacement n_reps times
@@ -184,6 +200,24 @@ def ci(a, bounds=95, axis=None):
     """
     p = 50-bounds/2, 50+bounds/2
     return np.percentile(a, p, axis)
+
+
+def poly_fit(x, y, order):
+    """
+    Taken from seaborn regression.py
+    Regression using numpy polyfit for higher-order trends.
+    """
+    x_min = np.min(x)
+    x_max = np.max(x)
+    grid = np.linspace(x_min, x_max, 100)
+
+    def reg_func(_x, _y):
+        return np.polyval(np.polyfit(_x, _y, order), grid)
+
+    yhat = reg_func(x, y)
+
+    yhat_boots = bootstrap_sb(x, y, func=reg_func, n_boot=1000)
+    return yhat, yhat_boots
 
 
 def linear_fit(x, y):

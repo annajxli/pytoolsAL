@@ -72,12 +72,14 @@ class RainierData:
         if dtype not in dtypes_allow:
             return ValueError(f'Data type {dtype} not found. Available types: '
                               + f'{dtypes_allow}')
-        if dtype is 'ephys':
+        print(f'loading {dtype} npy files...', end = ' ')
+        if dtype == 'ephys':
             for f in flist:
                 self.npys[f] = np.load(self.probedir/f'{f}.npy')
         if dtype in ['sync', 'wf']:
             for f in flist:
                 self.npys[f] = np.load(self.sessdir/f'{f}.npy')
+        print('done.')
 
     def sync_timestamps(self, sync1=None, sync2=None, timestamps2=None):
         """
@@ -151,6 +153,7 @@ class RainierData:
         Returns:
             spks_mat: array in shape [neurons, bins]
         """
+        print('binning spikes...', end = ' ')
         if spks is None:
             self.separate_spikes()
             spks = self.spikes
@@ -167,6 +170,8 @@ class RainierData:
             self.spk_mat = spk_mat
         else:
             return spk_mat
+
+        print('done.')
 
     def get_spike_rate(self):
         """

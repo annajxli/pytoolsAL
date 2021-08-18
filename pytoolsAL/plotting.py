@@ -7,6 +7,15 @@ from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
 import os
 
 
+def add_colorbar(ax):
+    """
+    """
+    cax = make_colorbar_axes(ax)
+    cb = plt.colorbar(cax=cax)
+    cb = apply_colorbar_defaults(cb)
+    return cb
+
+
 def apply_colorbar_defaults(cb):
     """
     since the default style sheet is kinda annoying for colorbars
@@ -23,7 +32,7 @@ def apply_colorbar_defaults(cb):
     return cb
 
 
-def add_colorbar(ax, pos='right', size='5%', pad=0.15):
+def make_colorbar_axes(ax, pos='right', size='4%', pad=0.15):
     divider = make_axes_locatable(ax)
     cax = divider.append_axes(pos, size=size, pad=pad)
     return cax
