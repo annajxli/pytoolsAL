@@ -72,7 +72,7 @@ class RainierData:
         if dtype not in dtypes_allow:
             return ValueError(f'Data type {dtype} not found. Available types: '
                               + f'{dtypes_allow}')
-        if dtype is 'ephys':
+        if dtype == 'ephys':
             for f in flist:
                 self.npys[f] = np.load(self.probedir / f'{f}.npy')
         if dtype in ['sync', 'wf']:
@@ -93,7 +93,7 @@ class RainierData:
         mean_offset = np.mean(offsets)
         self.mean_offset = mean_offset
 
-    def sync_timestamps(self, timestamps2=None):
+    def sync_timestamps(self, sync1=None, timestamps2=None):
         """
         Use sync1 to identify offset from sync2 and adjust timestamps2.
         Default: usually want to sync imaging to probe, so sync1 is p_sync,
