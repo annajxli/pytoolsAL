@@ -183,3 +183,46 @@ class RainierData:
         spkrate = np.mean(self.bin_spikes(sec_bins, set_self_matrix=False), axis=1)
 
         self.spkrate = spkrate
+
+
+def find_max_channels(templates):
+    """
+    Given templates.npy file, find the channel with the highest template
+    (i.e. neuron) signal (defined by max - min of timesamples).
+    Return neuron-length list of channel for each
+    Args:
+        templates: loaded templates.npy file
+
+    Returns:
+
+    """
+    channel_distrib = np.max(templates, axis=1) - np.min(templates, axis=1)
+    max_channels = np.argmax(channel_distrib, axis=1)
+    return max_channels
+
+
+def bin_neurons_positions(max_chans, xbins, ybins):
+    """
+
+    Args:
+        max_chans: array with each neuron's maximum channel position
+        xbins: list of x bin edges to use (shanks)
+        ybins: list of y bin edges to use (depths)
+
+    Returns:
+        bins_dict: dict with key for each combination of [x, y] bin,
+            values are the neuron ixs that belong to that bin
+
+    """
+    # determine which x and y bins each neuron belongs to
+    x_ix = np.digitize(max_chans[:, 0], xbins)
+    y_ix = np.digitize(max_chans[:, 1], ybins)
+
+    # make lists of neurons in each pair of x/y bins
+    bins_dict = {}
+    for yb in range(1, len(ybins)+1):
+        for xb in range(1, len(xbins)+1):
+            neurs = np.intersect1d(np.argwhere(x_ix == xb), np.argwhere(y_ix == yb))
+            binkey = f'{xbins[xb-1]}, {ybins[yb-1]}'
+            bins_dict[binkey] = neurs
+    return bins_dict
