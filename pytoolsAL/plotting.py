@@ -9,6 +9,10 @@ import os
 
 def add_colorbar(ax):
     """
+    wrapper function to add a properly scaled colorbar and apply
+    styling defaults
+
+    input ax object to add colorplot onto, returns colorbar object
     """
     cax = make_colorbar_axes(ax)
     cb = plt.colorbar(cax=cax)
@@ -32,7 +36,11 @@ def apply_colorbar_defaults(cb):
     return cb
 
 
-def make_colorbar_axes(ax, pos='right', size='4%', pad=0.15):
+def make_colorbar_axes(ax, pos='right', size='3%', pad=0.15):
+    """
+    return an ax object to contain the colorbar
+    properly scaled based on the ax input to add it to
+    """
     divider = make_axes_locatable(ax)
     cax = divider.append_axes(pos, size=size, pad=pad)
     return cax

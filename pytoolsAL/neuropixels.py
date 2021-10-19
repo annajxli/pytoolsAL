@@ -141,7 +141,8 @@ class RainierData:
         spks = np.asarray(spks, dtype='object')
 
         self.neurons = neurons
-        self.spikes = spks / 3e4  # convert to s: remind myself why this is 3e4
+        self.spikes = spks / 3e4  # sample rate, may want to set this
+        # programmatically in future
 
     def bin_spikes(self, bins, spks=None, set_self_matrix=False):
         """
@@ -161,10 +162,17 @@ class RainierData:
             self.separate_spikes()
             spks = self.spikes
 
+        # if there are spikes outside of the supplied bins,
+        # drop said spikes
+        spks_clipped = []
+        for spk_row in spks:
+            spk_row = spk_row[spk_row < bins[-1]]
+            spks_clipped.append(spk_row)
+
         spk_mat = np.zeros((np.max(self.neurons) + 1, len(bins) - 1))
         # spk_mat[:] = np.nan
 
-        for iN, neur in enumerate(spks):
+        for iN, neur in enumerate(spks_clipped):
             hist, edges = np.histogram(neur, bins, density=False)
             neur_num = self.neurons[iN]
             spk_mat[neur_num] = hist

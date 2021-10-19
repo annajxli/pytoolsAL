@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 
+import datetime
+import itertools
+from IPython.display import clear_output, display, HTML
+import matplotlib.pyplot as plt
 import numpy as np
 import numbers
-import warnings
+import pytoolsAL as ptAL
 import sklearn
+import warnings
 
 
 def norm(r):
@@ -16,8 +21,71 @@ def norm(r):
         normed: output array
 
     """
-    normed = np.divide((r - np.mean(r)), np.std(r))
+    normed = np.divide((r - np.mean(r)), np.std(r)+0.01)
     return normed
+
+
+def smooth_lowess(y, x=None, span=10, robust=False, iter=None, axis=-1):
+    """
+    Stolen from Mark Histed (thanks!)
+    Uses statsmodels.  As of around 2013, this is faster than Bio.statistics.
+    Args:
+        y: ndarray, can be 2d  (or maybe N-d - needs testing)
+        x: None (default) or 1d ndarray, same length as specified axis of y.  If None, use 1:len(y)
+        robust: bool, default False.  Whether to reweight to reduce influence of outliers, see docs
+        span: number of pts, or percent of total number of points, as in matlab smooth.m
+        axis: the axis to smooth over.
+    Notes:
+        Has MATLAB's nan behavior: drops nan's before smoothing, then puts the nans
+        back in the same places in the smoothed array and returns.
+    """
+
+    import statsmodels.nonparametric.api
+
+    if iter is not None:
+        raise RuntimeError('iter no longer used: use robust param instead')
+
+    y = np.asarray(y, dtype='f8')
+    nPts = y.shape[axis]
+
+    if x is None:
+        x = np.arange(nPts, dtype='float')
+    else:
+        x = np.asarray(x, dtype='f8')
+    if nPts < 2:
+        raise ValueError('Input must have length > 1')
+    if len(x) != np.shape(y)[axis]:
+        raise ValueError('x has len %d, mismatch with y (ax %d), has len %d'
+                         % (len(x), axis, np.shape(y)[axis]))
+
+    assert (np.all(np.diff(x)>0)), 'x must be strictly increasing'  # or output will be all nans
+
+    if span > (nPts-1):
+        span = nPts-1
+    if span < 1:
+        frac = span  # percent
+    else:
+        frac = 1.0*span/nPts  # is number of points, convert to span
+
+    if robust:
+        iter = 5
+    else:
+        iter = 1
+
+    delta = np.min((0.01 * np.ptp(x), span/5))  # hardcode.  first is suggestion in docs
+
+    # iterate over the specified axis.  Note we need a func because lowess() returns a tuple
+    def runonvec(y,x,frac,iter,delta):
+        # remove nans manually
+        ns = np.where(~np.isnan(y))
+        ysm = statsmodels.nonparametric.api.lowess(y[ns],x[ns],
+                                                    frac, it=iter, delta=delta, missing='raise')[:,1]
+        yret = y.copy() # contains nans
+        yret[ns] = ysm
+        return yret
+    smY = np.apply_along_axis(runonvec, axis, y, x, frac, iter, delta)
+
+    return smY
 
 
 class ReducedRankRegressor(object):
@@ -30,8 +98,11 @@ class ReducedRankRegressor(object):
         - reg: regularization parameter (optional)
 
     """
-    def __init__(self, X, Y, rank=None, reg=None):
-        print('initializing regressor...', end=' ')
+    def __init__(self, X, Y, rank=None, reg=None, suppress_output=True):
+        self.suppress_output = suppress_output
+
+        if not self.suppress_output:
+            print('initializing regressor...', end=' ')
         if np.size(np.shape(X)) == 1:
             X = np.reshape(X, (-1, 1))
         if np.size(np.shape(Y)) == 1:
@@ -40,9 +111,12 @@ class ReducedRankRegressor(object):
         max_rank = np.min(X.shape + Y.shape)
         if rank == 'max':
             rank = max_rank
-        else:
-            if rank < 0 or rank > max_rank:
+        if rank == None:
+            rank = max_rank
+            warnings.warn(f'no rank specified - defaulting to max rank {max_rank}')
+        if rank < 0 or rank > max_rank:
                 raise ValueError(f'rank cannot be negative nor greater than minimum input dimension: {max_rank}')
+
         self.rank = rank
 
         if reg is None:
@@ -51,7 +125,8 @@ class ReducedRankRegressor(object):
         self.X = X
         self.Y = Y
         self.reg = reg
-        print('done.')
+        if not self.suppress_output:
+            print('done.')
 
     def fit(self):
         """
@@ -61,7 +136,8 @@ class ReducedRankRegressor(object):
         B is shape [Xdim2 x rank]
 
         """
-        print('fitting regressor...')
+        if not self.suppress_output:
+            print('fitting regressor...')
         X = self.X
         Y = self.Y
         rank = self.rank
@@ -70,21 +146,26 @@ class ReducedRankRegressor(object):
         # X = np.vstack((X, reg_eye))
         # Y = np.vstack((Y, np.zeros((X.shape[1], Y.shape[1]))))
 
-        print('setting CXX and CXY...', end=' ')
+        if not self.suppress_output:
+            print('setting CXX and CXY...', end=' ')
         CXX = np.dot(X.T, X) + reg_eye
         CXY = np.dot(X.T, Y)
 
         self.CXX = CXX
         self.CXY = CXY
 
-        print('computing SVD...', end = ' ')
+        if not self.suppress_output:
+            print('computing SVD...', end = ' ')
         _U, _S, V = np.linalg.svd(np.dot(CXY.T, np.dot(np.linalg.pinv(CXX), CXY)))
 
-        print('done.')
-        print('setting A and B...', end=' ')
+        if not self.suppress_output:
+            print('done.')
+            print('setting A and B...', end=' ')
         self.A = V[0:rank, :].T
         self.B = np.dot(np.linalg.pinv(CXX), np.dot(CXY, self.A)).T
-        print('done.')
+
+        if not self.suppress_output:
+            print('done.')
 
     def predict(self, X):
         """
@@ -99,6 +180,93 @@ class ReducedRankRegressor(object):
         # convert from matrix to array and transpose - easier for later
         pred = np.asarray(pred.T)
         return pred
+
+
+def rrr_optimize(ranks, regs, x_train, y_train, x_test, y_test):
+    """
+    Attempts to optimize rrr params (regularization, rank)
+    Args:
+        - ranks: list of ranks to test
+        - regs: list of regs to test
+    """
+    start_time = datetime.datetime.now()
+
+    # make a list of the permutations
+    param_combos = list(itertools.product(ranks, regs))
+    # and array to store results
+    param_results = np.zeros((len(param_combos)))
+
+    # set up a figure to display results as they come in
+    f = plt.figure(figsize=(4, 4))
+    ax = plt.gca()
+    ax = ptAL.plotting.apply_heatmap_defaults(ax)
+    im = plt.imshow(np.zeros((len(ranks), len(regs))),
+                    extent=[0, len(regs), ranks[-1], ranks[0]],
+                    clim=[0, 1], aspect='auto')
+    plt.ylabel('rank')
+    plt.xlabel('regularization')
+
+    reglabels = plt.xticks()[0][:-1]
+    reglabels_log = regs[reglabels.astype('int')]
+    reglabels_log_str = [f'{x:.0e}' for x in reglabels_log]
+
+    ax.set_xticks(reglabels)
+    ax.set_xticklabels(reglabels_log_str)
+
+    cb = ptAL.plotting.add_colorbar(ax)
+    cb.ax.set_ylabel('cross-validated variance explained')
+
+    # set up objects to update figure/timing
+    dsp = display(display_id=True)
+    dsp2 = display(display_id=True)
+    dspfig = display(f, display_id=True)
+
+    for iP, params in enumerate(param_combos):
+        rank, reg = params
+        dsp.update(f'starting rank={rank}, reg={reg} ({iP+1}/{len(param_combos)})')
+
+        rrr = ReducedRankRegressor(x_train, y_train, rank=rank, reg=reg)
+        rrr.fit()
+
+        y_pred = rrr.predict(x_test)
+        score = score_var_explained(y_test, y_pred.T,
+                                    multioutput='variance_weighted')
+        param_results[iP] = score
+
+        total_elapsed = (datetime.datetime.now() - start_time).total_seconds()
+        dsp2.update(f'elapsed: {total_elapsed/60:.2f} min')
+
+        results_reshape = param_results.reshape((len(ranks), len(regs)))
+        max_ix = np.where(results_reshape == np.max(results_reshape))
+
+        ax.set_title(f'best: rank={ranks[max_ix[0][0]]}, reg={regs[max_ix[1][0]]:.2e}')
+        im.set_data(results_reshape)
+        im.set_clim(0, np.max(results_reshape)*1.2)
+        cb.ax.set_ylabel('cross-validated variance explained')
+        dspfig.update(f)
+        clear_output(wait=True)
+    return results_reshape
+
+
+def rrr_optimize_rank(ranks, reg, x_train, y_train, x_test, y_test):
+    """
+    Evaluate many ranks with fixed regularization
+    Args:
+        - ranks: list of ranks to test
+    """
+    scores = []
+    for iR, rank in enumerate(ranks):
+        print(f'starting {iR+1} of {len(ranks)}')
+        rrr = ReducedRankRegressor(x_train, y_train, rank=rank, reg=reg)
+        rrr.fit()
+
+        y_pred = rrr.predict(x_test)
+        score = score_var_explained(y_test, y_pred.T,
+                                    multioutput='variance_weighted')
+        scores.append(score)
+        clear_output(wait=True)
+    scores = np.array(scores)
+    return scores
 
 
 def score_mse(y_true, y_pred):
@@ -117,14 +285,17 @@ def continuous_kfold(x, n_splits=10, drop_remainder=False):
     for remainder: adds it to the final one
 
     Args:
-        x: input vector, only length is pulled from this
+        x: input vector OR int
         n_splits: number of splits to generate
         drop_remainder: whether to drop the last values if uneven division
 
     Returns:
         splits: n_splits-dimensional array of indexes
     """
-    length = len(x)
+    if type(x) is int:
+        length = x
+    else:
+        length = len(x)
     len_splits = length // n_splits
     extra = length % n_splits
 
@@ -184,6 +355,15 @@ def bootstrap(x, n_reps):
     boot_n = np.random.choice(x, (len(x), n_reps))
     return boot_n
 
+
+def describe(x, axis=None):
+    """
+    print some stats of current thing
+    """
+    print(f'mean: {np.mean(x, axis=axis)}')
+    print(f'median: {np.median(x, axis=axis)}')
+    print(f'min: {np.min(x, axis=axis)}')
+    print(f'max: {np.max(x, axis=axis)}')
 
 def ci(a, bounds=95, axis=None):
     """

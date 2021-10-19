@@ -1,15 +1,20 @@
 figure.dpi: 150
+figure.facecolor: white
+figure.autolayout: True
 
 font.family: Arial
 
 lines.linewidth: 1
 
+axes.facecolor: white
 axes.titlesize: 10
 axes.labelsize: 10
 axes.linewidth: 1
 axes.titlepad: 5
 axes.spines.top: False
 axes.spines.right: False
+axes.spines.bottom: True
+axes.spines.left: True
 axes.formatter.useoffset: False
 axes.prop_cycle: cycler('color', ['4878d0', 'ee854a', '6acc64', 'd65f5f', '956cb4', '8c613c', 'dc7ec0', '797979', 'd5bb67', '82c6e2'])
 
@@ -35,5 +40,6 @@ legend.fontsize: 8
 legend.frameon: False
 
 savefig.transparent: True
+savefig.dpi: 300
 
 image.interpolation: None
