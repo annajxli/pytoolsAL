@@ -318,6 +318,33 @@ def continuous_kfold(x, n_splits=10, drop_remainder=False):
     return splits
 
 
+def make_design_matrix(x, shifts):
+    """
+    Make design matrix of shape (len(x), len(shifts))
+    Each row is rolled according to its value in shifts
+    """
+    design = np.zeros((len(x), len(shifts)))
+
+    for i, n in enumerate(shifts):
+        design[:, i] = np.roll(x, n)
+
+    return design
+
+
+def iterate_stack_timeshifts(matrix, shifts, n_comps):
+    """
+    iterate through 2nd dim of matrix up to n_comps
+    for each, make timeshift matrix
+    then stack
+    """
+    stack = []
+    for n in np.arange(n_comps):
+        ts = make_design_matrix(matrix[:, n], shifts=shifts)
+        stack.append(ts)
+    timeshifts = np.hstack(stack)
+    return timeshifts
+
+
 def get_int_ceil_sqrt(n):
     """
     Mostly for plotting lots of frames in a square
