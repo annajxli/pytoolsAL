@@ -8,6 +8,7 @@ import numpy as np
 import os
 import pandas as pd
 import seaborn as sns
+import ipywidgets as widgets
 
 
 def add_colorbar(ax, mappable=None):
@@ -167,7 +168,10 @@ def heatmap(x, y, **kwargs):
     else:
         color_min, color_max = min(color), max(color) # Range of values that will be mapped to the palette, i.e. min and max possible correlation
 
-    cm = mpl.cm.ScalarMappable(cmap='coolwarm')
+    if 'cmap' in kwargs:
+        cm = mpl.cm.ScalarMappable(cmap=kwargs['cmap'])
+    else:
+        cm = mpl.cm.ScalarMappable(cmap='coolwarm')
     cm.set_clim(-1, 1)
 
     def value_to_color(val):
@@ -241,7 +245,7 @@ def heatmap(x, y, **kwargs):
     return ax, cb
 
 
-def corrplot(data, size_scale=500, marker='s'):
+def corrplot(data, size_scale=500, marker='s', cmap='coolwarm'):
     """
     from https://github.com/dylan-profiler/heatmaps/blob/master/heatmap/heatmap.py
     """
@@ -254,6 +258,43 @@ def corrplot(data, size_scale=500, marker='s'):
             marker=marker,
             x_order=data.columns,
             y_order=data.columns[::-1],
-            size_scale=size_scale
+            size_scale=size_scale,
+            cmap=cmap
             )
     return ax, cb
+
+
+def sliderplot(x_list):
+    """
+    idk make it better later
+    """
+    length = len(x_list[0])
+
+    colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+
+    def update(xslider):
+        f = plt.figure(figsize=(4, 3))
+        ax = plt.gca()
+
+        ax.set_yticks([])
+        xmin = int(xslider[0])
+        xmax = int(xslider[1])
+
+        for ix, x in enumerate(x_list):
+            ax2 = ax.twinx()
+            plt.plot(x[xmin:xmax], color=colors[ix], alpha=0.7)
+            ax2.spines['right'].set_position(('axes', 1+0.1*ix))
+            ax2.tick_params(axis='y', which='both', colors=colors[ix])
+
+        ax2.relim()
+        ax2.autoscale_view(scalex=False)
+
+        plt.show()
+
+    w = widgets.interactive(update, xslider=widgets.FloatRangeSlider(
+                            value=[0, length], min=0, max=length,
+                            step=1, layout=widgets.Layout(width='50%'),
+                            description='x range',
+                            style={'description_width': 'initial'}))
+    w.update()
+    return w

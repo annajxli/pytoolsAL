@@ -1,9 +1,17 @@
 name: anna37
+channels:
+  - conda-forge
+  - defaults
 dependencies:
-  - python>=3.7
+  - jupytext
+  - python=3.7
   - pip
-  - numpy>=1.16
-  - numba>=0.43.1
+  - numpy=1.16
+  - numba=0.43.1
   - matplotlib
   - scipy
   - scikit-learn
+
+  - pip:
+    - -e git+https://github.com/annajxli/pytoolsAL.git#egg=pytoolsAL
+    - -e git+https://github.com/cortex-lab/phylib.git#egg=phylib

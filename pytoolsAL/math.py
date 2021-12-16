@@ -25,6 +25,12 @@ def norm(r):
     return normed
 
 
+def find_nearest_value_index(array, value):
+    array = np.asarray(array)
+    ix = (np.abs(array - value)).argmin()
+    return ix
+
+
 def smooth_lowess(y, x=None, span=10, robust=False, iter=None, axis=-1):
     """
     Stolen from Mark Histed (thanks!)
@@ -248,15 +254,16 @@ def rrr_optimize(ranks, regs, x_train, y_train, x_test, y_test):
     return results_reshape
 
 
-def rrr_optimize_rank(ranks, reg, x_train, y_train, x_test, y_test):
+def rrr_optimize_rank(ranks, x_train, y_train, x_test, y_test, reg=None):
     """
     Evaluate many ranks with fixed regularization
     Args:
         - ranks: list of ranks to test
     """
     scores = []
+    dsp = display(display_id=True)
     for iR, rank in enumerate(ranks):
-        print(f'starting {iR+1} of {len(ranks)}')
+        dsp.update(f'optimizing rank: starting {iR+1} of {len(ranks)}')
         rrr = ReducedRankRegressor(x_train, y_train, rank=rank, reg=reg)
         rrr.fit()
 
@@ -264,7 +271,6 @@ def rrr_optimize_rank(ranks, reg, x_train, y_train, x_test, y_test):
         score = score_var_explained(y_test, y_pred.T,
                                     multioutput='variance_weighted')
         scores.append(score)
-        clear_output(wait=True)
     scores = np.array(scores)
     return scores
 
@@ -275,6 +281,9 @@ def score_mse(y_true, y_pred):
 
 
 def score_var_explained(y_true, y_pred, multioutput=None):
+    """
+    'raw_values', 'variance_weighted'
+    """
     score = sklearn.metrics.explained_variance_score(y_true, y_pred, multioutput=multioutput)
     return score
 
