@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 
 import numpy as np
-import warnings
-import pathlib
 import os
+import pathlib
+from scipy.optimize import curve_fit
+import sys
+import warnings
 
+sys.path.append('C://Users/anna/Repositories/Pipelines/ephys/qc')
+import single_units_wrapper as qc
 
 class RainierData:
     def __init__(self, datadir, mn, td, en, probe=None, label=None):
@@ -23,8 +27,9 @@ class RainierData:
 
         self.flipper_tstamps_sync = None
         self.mean_offset = None
-        self.spkrate = None
+        self.spk_rate = None
 
+        self.neurons = None
         self.spikes = None
         self._get_session_dir()
 
@@ -117,6 +122,31 @@ class RainierData:
 
         self.flipper_tstamps_sync = synced
 
+    def run_refrac_qc(self, bin_size=0.25, thresh=0.1,
+                      accept_thresh=0.1, drop=True):
+        """
+        run the slidingRP_viol qc function on all neurons
+        if drop, then drop the failed ones from spk_mat, neurons, spikes, spk_rate
+        otherwise, return the boolean accept/reject array
+        """
+        rp_pass = []
+        for spikes in self.spikes:
+            accept = qc.slidingRP_viol(spikes)
+            rp_pass.append(accept)
+
+        rp_pass = np.array(rp_pass, dtype=bool)
+        print(f'{np.sum(rp_pass)}/{len(self.neurons)} neurons passed')
+
+        if drop:
+            self.neurons = self.neurons[rp_pass]
+            self.spikes = self.spikes[rp_pass]
+
+            self.spk_mat = self.spk_mat[self.neurons]
+            self.spk_rate = self.spk_rate[self.neurons]
+
+        else:
+            return rp_pass
+
     def separate_spikes(self):
         """
         Given equal arrays of [spiketimes] and [spikeclusters]
@@ -188,9 +218,9 @@ class RainierData:
         """
         end_time = np.ceil(np.max(self.npys['spike_times'] / 3e4))
         sec_bins = np.arange(0, end_time, 1)
-        spkrate = np.mean(self.bin_spikes(sec_bins, set_self_matrix=False), axis=1)
+        spk_rate = np.mean(self.bin_spikes(sec_bins, set_self_matrix=False), axis=1)
 
-        self.spkrate = spkrate
+        self.spk_rate = spk_rate
 
 
 def find_max_channels(templates):
@@ -234,3 +264,69 @@ def bin_neurons_positions(max_chans, xbins, ybins):
             binkey = f'{xbins[xb-1]}, {ybins[yb-1]}'
             bins_dict[binkey] = neurs
     return bins_dict
+
+
+def computePR(spkcounts):
+    """
+    From Stefano
+    """
+    C = np.cov(spkcounts)
+    ofdiag = ~np.eye(C.shape[0],dtype=bool)
+    ondiag = np.eye(C.shape[0],dtype=bool)
+    mii = C[ondiag].mean()
+    mij = C[ofdiag].mean()
+    N = C.shape[0]
+    sii = 1 / (N - 1) * np.sum((C[ondiag] - mii) ** 2)
+    sij = 1 / (N * (N - 1) - 2) * np.sum((C[ofdiag] - mij) ** 2)
+    sijt = np.nan
+    siit = np.nan
+
+    N_rep = 1000
+    pcg = 0.8
+    T = spkcounts.shape[1]
+    N = spkcounts.shape[0]
+
+    siiall = np.zeros(N_rep)
+    sijall = np.zeros(N_rep)
+    Tall = np.zeros(N_rep)
+    Nall = np.zeros(N_rep)
+    for i_rep in np.arange(N_rep):
+        T_num = int(np.random.choice(np.round(np.arange(15, T) * pcg), replace = False))
+        N_num = N
+        Tall[i_rep] = T_num
+        Nall[i_rep] = N_num
+        idxs_T = np.random.choice(np.arange(T), T_num, replace = False)
+        idxs_N = np.random.choice(np.arange(N), N_num, replace = False)
+        X = spkcounts[np.ix_(idxs_N, idxs_T)]
+        C = np.cov(X)
+        ondiag = np.eye(C.shape[0], dtype=bool)
+        ofdiag = np.triu(np.ones_like(C, dtype=bool), k=1)
+        sii_temp = C[ondiag].var()
+        sij_temp = C[ofdiag].var()
+        sijall[i_rep] = sij_temp
+        siiall[i_rep] = sii_temp
+
+    def func_cros(x, a, b):
+        N_trials = x# N_trials, N_neurons = x
+        return (N_trials-1)/N_trials * b + a/N_trials #+ c / (N_trials * (N_neurons+1))
+
+    def func_auto(x, a, b):
+        N_trials = x
+        return (N_trials - 1) / (N_trials + 1) * b + a / (N_trials + 1)
+
+    sij_fit, pcov = curve_fit(func_cros, Tall, sijall, bounds=(0., [1000., 1000.]))
+    sii_fit, pcov = curve_fit(func_auto, Tall, siiall, bounds=(0., [1000., 1000.]))
+    sij = sij_fit[1]
+    sii = sii_fit[1]
+
+    ds = np.sqrt(sij) / mii
+    N = C.shape[0]
+    PR = (np.trace(C)) ** 2 / (np.trace(C @ C))
+    PRsij = N / (1 + N * ds ** 2)
+    PRsijt = ds ** (-2)
+
+    stats = {
+    'mii':mii, 'sii':sii, 'mij':mij, 'sij':sij, 'ds':ds, 'N':N,
+    'PR':PR, 'PRsij':PRsij, 'PRsijt':PRsijt, 'T':T}
+
+    return stats

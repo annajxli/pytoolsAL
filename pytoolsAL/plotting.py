@@ -11,6 +11,9 @@ import seaborn as sns
 import ipywidgets as widgets
 
 
+def get_default_colors():
+    return plt.rcParams['axes.prop_cycle'].by_key()['color']
+
 def add_colorbar(ax, mappable=None):
     """
     wrapper function to add a properly scaled colorbar and apply

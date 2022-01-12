@@ -23,7 +23,7 @@ xtick.direction: in
 xtick.major.size: 4
 xtick.major.width: 1
 xtick.major.pad: 5
-xtick.minor.visible: True
+xtick.minor.visible: False
 xtick.minor.size: 2
 xtick.minor.width: 1
 
@@ -32,7 +32,7 @@ ytick.direction: in
 ytick.major.size: 4
 ytick.major.width: 1
 ytick.major.pad: 5
-ytick.minor.visible: True
+ytick.minor.visible: False
 ytick.minor.size: 2
 ytick.minor.width: 1
 
