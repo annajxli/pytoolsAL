@@ -146,9 +146,22 @@ class ReducedRankRegressor(object):
             print('fitting regressor...')
         X = self.X
         Y = self.Y
+
+        # find which column in X has the intercept
+        intercept_col = np.where(np.sum(X, axis=0) == X.shape[0])
+        if len(intercept_col) > 1:
+            raise ValueError('multiple intercept columns found ' \
+                             '(somehow multiple cols sum to length)' \
+                             'this is rare, idk fix it if it comes up')
+        else:
+            intercept_col = intercept_col[0]
+
         rank = self.rank
         reg = self.reg
         reg_eye = reg * np.eye(np.size(X, 1), dtype='uint8')
+
+        # don't apply regularization to intercept col
+        reg_eye[intercept_col, intercept_col] = 0
         # X = np.vstack((X, reg_eye))
         # Y = np.vstack((Y, np.zeros((X.shape[1], Y.shape[1]))))
 
