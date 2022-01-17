@@ -21,7 +21,7 @@ class RainierData:
 
         self.mn = mn
         self.td = td
-        self.en = en
+        self.en = str(en)
         self.probe = probe
         self.label = label
 
