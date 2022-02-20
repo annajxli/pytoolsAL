@@ -11,24 +11,49 @@ import sklearn
 import warnings
 
 
-def norm(r):
+def norm(r, c=0):
     """
     Normalizes array in (array - mean)/(std)
     Args:
-        r: input array to normalize
+        r: input array to normalize, shape (samples, features)
+        c: small constant to add to std if desired
 
     Returns:
         normed: output array
 
     """
-    normed = np.divide((r - np.mean(r)), np.std(r)+0.01)
+    normed = np.divide((r - np.mean(r, axis=0)), np.std(r, axis=0)+c)
     return normed
 
 
 def find_nearest_value_index(array, value):
+    """
+    returns floor
+    e.g. if array is 1, 2, 3 and value is 1.7,
+    returns 0 (for value 1)
+    """
     array = np.asarray(array)
-    ix = (np.abs(array - value)).argmin()
+    array_diff = array - value
+    # cut off positive values (i.e. don't round up)
+    array_diff = array_diff[array_diff <= 0]
+
+    ix = (np.abs(array_diff)).argmin()
     return ix
+
+
+def find_nearest_values_indices(array, values):
+    """
+    a version of the prev fx to do for array
+    """
+    array = np.asarray(array)
+    ixs = []
+    for v in values:
+        array_diff = array - v
+        # cut off positive values (i.e. don't round up)
+        array_diff = array_diff[array_diff <= 0]
+        ix = (np.abs(array_diff)).argmin()
+        ixs.append(ix)
+    return ixs
 
 
 def smooth_lowess(y, x=None, span=10, robust=False, iter=None, axis=-1):
@@ -104,10 +129,11 @@ class ReducedRankRegressor(object):
         - reg: regularization parameter (optional)
 
     """
-    def __init__(self, X, Y, rank=None, reg=None, suppress_output=True):
-        self.suppress_output = suppress_output
+    def __init__(self, X, Y, rank=None, reg=None, reg_matrix = None,
+                 verbose=0):
+        self.verbose = verbose
 
-        if not self.suppress_output:
+        if self.verbose > 0:
             print('initializing regressor...', end=' ')
         if np.size(np.shape(X)) == 1:
             X = np.reshape(X, (-1, 1))
@@ -131,7 +157,13 @@ class ReducedRankRegressor(object):
         self.X = X
         self.Y = Y
         self.reg = reg
-        if not self.suppress_output:
+
+        if reg_matrix is not None:
+            self.reg_mat = reg_matrix
+        else:
+            self.reg_mat = None
+
+        if self.verbose > 0:
             print('done.')
 
     def fit(self):
@@ -142,7 +174,7 @@ class ReducedRankRegressor(object):
         B is shape [Xdim2 x rank]
 
         """
-        if not self.suppress_output:
+        if self.verbose > 0:
             print('fitting regressor...')
         X = self.X
         Y = self.Y
@@ -158,14 +190,18 @@ class ReducedRankRegressor(object):
 
         rank = self.rank
         reg = self.reg
-        reg_eye = reg * np.eye(np.size(X, 1), dtype='uint8')
 
-        # don't apply regularization to intercept col
-        reg_eye[intercept_col, intercept_col] = 0
-        # X = np.vstack((X, reg_eye))
-        # Y = np.vstack((Y, np.zeros((X.shape[1], Y.shape[1]))))
+        if self.reg_mat is not None:
+            reg_eye = self.reg_mat
+        else:
+            reg_eye = reg * np.eye(np.size(X, 1), dtype='uint8')
 
-        if not self.suppress_output:
+            # don't apply regularization to intercept col
+            reg_eye[intercept_col, intercept_col] = 0
+            # X = np.vstack((X, reg_eye))
+            # Y = np.vstack((Y, np.zeros((X.shape[1], Y.shape[1]))))
+
+        if self.verbose > 0:
             print('setting CXX and CXY...', end=' ')
         CXX = np.dot(X.T, X) + reg_eye
         CXY = np.dot(X.T, Y)
@@ -173,17 +209,17 @@ class ReducedRankRegressor(object):
         self.CXX = CXX
         self.CXY = CXY
 
-        if not self.suppress_output:
+        if self.verbose > 0:
             print('computing SVD...', end = ' ')
         _U, _S, V = np.linalg.svd(np.dot(CXY.T, np.dot(np.linalg.pinv(CXX), CXY)))
 
-        if not self.suppress_output:
+        if self.verbose > 0:
             print('done.')
             print('setting A and B...', end=' ')
         self.A = V[0:rank, :].T
         self.B = np.dot(np.linalg.pinv(CXX), np.dot(CXY, self.A)).T
 
-        if not self.suppress_output:
+        if self.verbose > 0:
             print('done.')
 
     def predict(self, X):
@@ -225,7 +261,7 @@ def rrr_optimize(ranks, regs, x_train, y_train, x_test, y_test):
     plt.ylabel('rank')
     plt.xlabel('regularization')
 
-    reglabels = plt.xticks()[0][:-1]
+    reglabels = plt.xticks(rotation=45)[0][:-1]
     reglabels_log = regs[reglabels.astype('int')]
     reglabels_log_str = [f'{x:.0e}' for x in reglabels_log]
 
@@ -267,7 +303,8 @@ def rrr_optimize(ranks, regs, x_train, y_train, x_test, y_test):
     return results_reshape
 
 
-def rrr_optimize_rank(ranks, x_train, y_train, x_test, y_test, reg=None):
+def rrr_optimize_rank(ranks, x_train, y_train, x_test, y_test, reg=None,
+                reg_matrix=None):
     """
     Evaluate many ranks with fixed regularization
     Args:
@@ -277,7 +314,8 @@ def rrr_optimize_rank(ranks, x_train, y_train, x_test, y_test, reg=None):
     dsp = display(display_id=True)
     for iR, rank in enumerate(ranks):
         dsp.update(f'optimizing rank: starting {iR+1} of {len(ranks)}')
-        rrr = ReducedRankRegressor(x_train, y_train, rank=rank, reg=reg)
+        rrr = ReducedRankRegressor(x_train, y_train, rank=rank, reg=reg,
+                reg_matrix=reg_matrix)
         rrr.fit()
 
         y_pred = rrr.predict(x_test)
