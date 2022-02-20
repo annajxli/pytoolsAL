@@ -33,6 +33,10 @@ class RainierData:
         self.spikes = None
         self._get_session_dir()
 
+        self.spk_mat = None
+        self.positions = None
+        self.spk_mat_norm = None
+
         if self.probe is not None:
             self._get_probe_dir()
 
@@ -51,8 +55,6 @@ class RainierData:
     def _get_probe_dir(self):
         """
         Get full subdir corresponding to neuropixels files
-        Currently not able to handle multiple probes, I honestly don't even
-        know how that looks in the file structure.
         """
         probedir = []
         for i in os.listdir(self.sessdir):
@@ -122,6 +124,13 @@ class RainierData:
 
         self.flipper_tstamps_sync = synced
 
+    def get_positions(self):
+        chan_pos = self.npys['channel_positions']
+        max_channels = find_max_channels(self.npys['templates'])
+        neuron_pos = chan_pos[max_channels]
+
+        self.positions = neuron_pos
+
     def run_refrac_qc(self, bin_size=0.25, thresh=0.1,
                       accept_thresh=0.1, drop=True):
         """
@@ -137,12 +146,15 @@ class RainierData:
         rp_pass = np.array(rp_pass, dtype=bool)
         print(f'{np.sum(rp_pass)}/{len(self.neurons)} neurons passed')
 
+        self.rp_pass = rp_pass
+        
         if drop:
             self.neurons = self.neurons[rp_pass]
             self.spikes = self.spikes[rp_pass]
 
             self.spk_mat = self.spk_mat[self.neurons]
             self.spk_rate = self.spk_rate[self.neurons]
+            self.positions = self.positions[self.neurons]
 
         else:
             return rp_pass
@@ -211,6 +223,17 @@ class RainierData:
             self.spk_mat = spk_mat
         else:
             return spk_mat
+
+    def norm_spike_mat(self, cfactor=0.5):
+        """
+        normalize spiking rates by dividing each cell by its mean plus
+        a small factor
+        """
+        spk_mat = self.spk_mat
+        mean_factor = np.mean(spk_mat, axis=1)+cfactor
+        spk_mat_norm = spk_mat/mean_factor[:, None]
+
+        self.spk_mat_norm = spk_mat_norm
 
     def get_spike_rate(self):
         """
