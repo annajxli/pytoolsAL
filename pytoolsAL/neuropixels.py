@@ -1,14 +1,68 @@
 #!/usr/bin/env python3
 
+from IPython.display import display
 import numpy as np
 import os
-import pathlib
+from pathlib import Path
+import pytoolsAL as ptAL
 from scipy.optimize import curve_fit
+import shutil
 import sys
 import warnings
 
 sys.path.append('C://Users/anna/Repositories/Pipelines/ephys/qc')
 import single_units_wrapper as qc
+
+def copy_server_data(server_dir, local_dir, mn, file_lim_bytes=1e9, verbose=0):
+    """
+    copies files below file_lim bytes in a specific subject directory
+    skips files if they already exist
+
+    Args:
+        serverdir: path to \Subjects folder on server
+        localdir: path to equivalent dir on local machine
+        mn: mousename (will copy these folders)
+        file_lim_bytes: only copy files under this (in bytes), default is
+            1e9 bytes (1gb)
+        verbose: controls verbosity of output. verbose > 0 displays status
+            for each folder and num skipped. verbose > 1 also displays
+            skipped files and their sizes.
+    """
+    subj_dir = Path(server_dir)/mn
+    local_subj_dir = Path(local_dir)/mn
+
+    for root, subdirs, files in os.walk(subj_dir):
+        for subdir in subdirs:
+            # first make all subdirectories (e.g. date, exp)
+            old_subdir = Path(root)/subdir
+            new_subdir = str(old_subdir).replace(
+                str(subj_dir), str(local_subj_dir))
+            Path(new_subdir).mkdir(parents=True, exist_ok=True)
+
+        dsp = display(display_id=True)
+        skipped = 0
+        for iF, file in enumerate(files):
+            if verbose > 0:
+                dsp.update(f'copying {iF+1}/{len(files)} in {root}')
+            old_filepath = Path(root)/file
+            filesize = os.path.getsize(old_filepath)
+
+            if filesize < file_lim_bytes:
+                new_filepath = str(old_filepath).replace(
+                    str(subj_dir), str(local_subj_dir))
+
+                if not Path(new_filepath).is_file():
+                    shutil.copy(old_filepath, new_filepath)
+                else:
+                    print(f'    did not copy {new_filepath} - already exists')
+
+            else:
+                skipped += 1
+                if verbose > 1:
+                    print(f'    skipping {file}: {filesize/1e9:.0f} gb')
+        if verbose > 0:
+            print(f'    skipped {skipped} oversize files')
+
 
 class RainierData:
     def __init__(self, datadir, mn, td, en, probe=None, label=None):
@@ -82,9 +136,18 @@ class RainierData:
         if dtype == 'ephys':
             for f in flist:
                 self.npys[f] = np.load(self.probedir / f'{f}.npy')
-        if dtype in ['sync', 'wf']:
+        if dtype == 'sync':
             for f in flist:
                 self.npys[f] = np.load(self.sessdir / f'{f}.npy')
+        if dtype == 'wf':
+            for f in flist:
+                try:
+                    self.npys[f] = np.load(self.sessdir / 'corr' / f'{f}.npy')
+                except FileNotFoundError:
+                    try:
+                        self.npys[f] = np.load(self.sessdir / 'blue' / f'{f}.npy')
+                    except FileNotFoundError:
+                        raise FileNotFoundError(f'file {f} not found in blue nor in corr')
 
     def find_flipper_offset(self):
         npys = self.npys
@@ -147,7 +210,7 @@ class RainierData:
         print(f'{np.sum(rp_pass)}/{len(self.neurons)} neurons passed')
 
         self.rp_pass = rp_pass
-        
+
         if drop:
             self.neurons = self.neurons[rp_pass]
             self.spikes = self.spikes[rp_pass]
