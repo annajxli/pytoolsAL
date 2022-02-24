@@ -1,12 +1,15 @@
 #!/usr/bin/env python
 
-import os
-
 import imageio
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 import numpy as np
-import tifffile
+import os
+from pathlib import Path
+import pytoolsAL as ptAL
+import scipy
 from skimage import transform
-
+import tifffile
 
 def percentiles(im, lower=0.5, upper=99.5):
     """
@@ -78,6 +81,117 @@ def reconstruct_from_svd(svd_temp, svd_spat, t=None, x=None, y=None, comps=200):
     recon_im = recon_im.transpose(2, 0, 1)
 
     return recon_im
+
+
+def bandpass_and_hilbert(im, fs, band=[3, 6], verbose=0):
+    """
+    compute phasemap for image stack
+    needs ~1-2 seconds to be accurate
+
+    Args:
+        im: array image stack in shape (time, x, y)
+        fs: sampling rate
+
+    Returns:
+        im_phasemap: image stack with phasemap transform
+    """
+    # right now - hardcode to 512x512 image
+    n_frames = im.shape[0]
+    im_r = im.reshape(n_frames, 512*512)
+
+    # butterworth bandpass filter
+    if verbose > 0:
+        print('applying butterworth filter')
+    b, a = scipy.signal.butter(N=2, Wn=np.r_[band]/(fs/2), btype='bandpass', output='ba')
+    im_filtered = scipy.signal.lfilter(b, a, im_r, axis=0)
+
+    if verbose > 0:
+        print('performing hilbert transform')
+    # hilbert transform
+    im_transform = scipy.signal.hilbert(im_filtered, axis=0)
+
+    if verbose > 0:
+        print('converting to phasemap')
+    # angle of complex arg in degrees
+    im_phasemap = np.angle(im_transform, deg=True)
+
+    # return to 2d
+    im_phasemap = im_phasemap.reshape(n_frames, 512, 512)
+
+    return im_phasemap
+
+
+class FacemapLoader:
+    def __init__(self, datapath):
+        self.datapath = Path(datapath)
+
+        self.svd_spat = None
+        self.svd_temp = None
+        self.avg_frame = None
+
+        self.motion = None
+        self.roi_x = None
+        self.roi_y = None
+
+
+    def load_facemap(self, doPlot=True, nComps=None):
+        datapath = self.datapath
+
+        face_proc = np.load(datapath/'face_proc.npy', allow_pickle=True).item()
+
+        self.svd_spat = face_proc['motMask_reshape'][1]
+        self.svd_temp = face_proc['motSVD'][1]
+        self.avg_frame = face_proc['avgframe_reshape']
+
+        self.motion = face_proc['motion'][1]
+        self.roi_x = face_proc['rois'][0]['xrange_bin']
+        self.roi_y = face_proc['rois'][0]['yrange_bin']
+
+        if doPlot:
+            self._plot_facemap(nComps)
+
+    def _plot_facemap(self, nComps):
+        roi_x = self.roi_x
+        roi_y = self.roi_y
+        avg_frame = self.avg_frame
+        motion = self.motion
+        svd_spat = self.svd_spat
+        svd_temp = self.svd_temp
+
+        if nComps is None:
+            nComps = 3
+
+        f = plt.figure(figsize=(5, (nComps+1)*1.5))
+        gs = mpl.gridspec.GridSpec(nComps+1, 3)
+
+        t_lims = (0000, 3000)
+        ax = plt.subplot(gs[0, 0])
+        plt.imshow(avg_frame[roi_y][:, roi_x], cmap='Greys_r')
+        ax = ptAL.plotting.apply_image_defaults(ax)
+        plt.title(f'avg frame')
+
+        ax = plt.subplot(gs[0, 1:])
+        plt.plot(motion, lw=0.5)
+        plt.xlim(t_lims)
+        ax.xaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda x, pos: f'{x/60:.0f}'))
+        plt.xlabel('time (s)')
+        plt.title('motion energy')
+
+        for iC in range(nComps):
+            ax = plt.subplot(gs[iC+1, 0])
+            plt.imshow(svd_spat[..., iC], cmap='plasma')
+            plt.title(f'spat comp {iC}')
+            ax = ptAL.plotting.apply_image_defaults(ax)
+
+            ax = plt.subplot(gs[iC+1, 1:])
+            plt.plot(svd_temp[..., iC], lw=0.5, c='deeppink')
+            plt.xlim(t_lims)
+
+            ax.xaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda x, pos: f'{x/60:.0f}'))
+            plt.xlabel('time (s)')
+            plt.title(f'temp comp {iC}')
+
+        f.tight_layout()
 
 
 def scanimage_deinterleave(infile, save=False, outfile=None):
@@ -178,10 +292,44 @@ def avi_to_gif(path_to_im, fps=30.0):
     impath = path_to_im
     gif_out = impath.replace('.avi', '.gif')
 
-    avi = imageio.mimread(impath)
-    imageio.mimsave(gif_out, avi, fps=fps)
+    avi_reader = imageio.get_reader(impath)
+    gif_writer = imageio.get_writer(gif_out, fps=fps)
+
+    for im in avi_reader:
+        gif_writer.append_data(im)
+
+    gif_writer.close()
 
     print('Done. Saved gif to {}'.format(gif_out))
+
+
+def avi_to_tif(path_to_im):
+    """
+    Convert .avi movie into .tif
+    Later: accept other movie types
+
+    Args:
+        path_to_im: existing avi file
+
+    Returns:
+        None. Saves .avi to .tif with same name.
+
+    """
+
+    impath = path_to_im
+    tif_out = impath.replace('.avi', '.tif')
+
+    avi_reader = imageio.get_reader(impath)
+    tif_writer = imageio.get_writer(tif_out)
+
+    for im in avi_reader:
+        tif_writer.append_data(im)
+
+    tif_writer.close()
+    # avi = imageio.mimread(impath)
+    # imageio.mimsave(tiff_out, avi)
+
+    print('Done. Saved tif to {}'.format(tif_out))
 
 
 def get_response_map_1stim(im, n_reps, base_frs, stim_frs):
