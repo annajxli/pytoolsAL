@@ -30,6 +30,16 @@ def add_colorbar(ax, mappable=None):
     return cb
 
 
+def add_colorbar_space(ax):
+    """
+    since adding a colorbar to just one plot makes subplots uneven,
+    add the same empty 'space' to other axes if desired
+    """
+    cax = make_colorbar_axes(ax)
+    cax.axis('off')
+    return cax
+
+
 def apply_colorbar_defaults(cb):
     """
     since the default style sheet is kinda annoying for colorbars
