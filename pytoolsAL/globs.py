@@ -16,7 +16,6 @@ class Globs:
         elif self.machine == 'macbook':
             self.datadir = Path('/Users/anna/Data/steinmetzlab')
             self.stylesheet = Path('/Users/anna/Repositories/pytoolsAL/styles/ALpres.mplstyle')
-            self.cmap_bbr = mpl.colors.LinearSegmentedColormap.from_list('bbr', np.load(
-                            '/Users/anna/Repositories/pytoolsAL/styles/cmap_blueblackred.npy'))
+
         else:
             raise ValueError('not a valid machine, try labpc or macbook')

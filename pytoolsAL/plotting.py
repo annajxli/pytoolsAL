@@ -7,6 +7,7 @@ from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
 import numpy as np
 import os
 import pandas as pd
+from pathlib import Path
 import seaborn as sns
 import ipywidgets as widgets
 
@@ -127,6 +128,72 @@ def apply_multiple_locator(ax, multiple_dict):
     return ax
 
 
+def get_plottable_positions(positions, jitter_factor=1):
+    """
+    plots neurons by their positions on neuropixels probe
+    discretizes x positions (such that there's a smaller gap between shanks)
+    jitters neurons that share single channel
+
+    Args:
+        positions: array of x/z positions in shape (neurons, 2)
+
+    Returns:
+        pos_jittered: array to use for scatter
+        x_um: original x positions for tick labels
+        x_plot: real positions of x coordinates
+    """
+    x_um = np.unique(positions[:, 0])
+
+    # typically 8 for 4 shank probes, assume/hardcode this case for now
+    if len(x_um == 8):
+        x_plot = [0, 1, 3, 4, 6, 7, 9, 10]
+
+    pos_descr = np.copy(positions)
+    for i, x_coord in enumerate(x_um):
+        x_ix = np.argwhere(positions[:, 0] == x_coord).ravel()
+        pos_descr[x_ix, 0] = x_plot[i]
+
+    pos_jittered = np.copy(pos_descr)
+    pos, p_counts = np.unique(positions, axis=0, return_counts=True)
+
+    # i honestly do not know how *not* to hardcode this
+    for i, count in enumerate(p_counts):
+        duplicate_pos = pos[i]
+        neurs_p = np.where((positions == duplicate_pos).all(axis=1))[0]
+        if count == 2:
+            n1, n2 = neurs_p
+            pos_jittered[n1, 0] += -0.15*jitter_factor
+            pos_jittered[n2, 0] += 0.15*jitter_factor
+        if count == 3:
+            n1, n2, n3 = neurs_p
+            pos_jittered[n1, 0] += -0.3*jitter_factor
+            pos_jittered[n3, 0] += 0.3*jitter_factor
+        if count == 4:
+            n1, n2, n3, n4 = neurs_p
+            pos_jittered[n1, 0] += -0.45*jitter_factor
+            pos_jittered[n2, 0] += -0.15*jitter_factor
+            pos_jittered[n3, 0] += 0.15*jitter_factor
+            pos_jittered[n4, 0] += 0.45*jitter_factor
+        if count == 5:
+            n1, n2, n3, n4, n5 = neurs_p
+            pos_jittered[n1, 0] += -0.6*jitter_factor
+            pos_jittered[n2, 0] += -0.3*jitter_factor
+            pos_jittered[n4, 0] += 0.3*jitter_factor
+            pos_jittered[n5, 0] += 0.6*jitter_factor
+        if count == 6:
+            n1, n2, n3, n4, n5, n6 = neurs_p
+            pos_jittered[n1, 0] += -0.75*jitter_factor
+            pos_jittered[n2, 0] += -0.45*jitter_factor
+            pos_jittered[n3, 0] += -0.15*jitter_factor
+            pos_jittered[n4, 0] += 0.15*jitter_factor
+            pos_jittered[n5, 0] += 0.45*jitter_factor
+            pos_jittered[n6, 0] += 0.75*jitter_factor
+        if count > 6:
+            raise NotImplementedError('sry future me')
+
+    return pos_jittered, x_um, x_plot
+
+
 def anim_to_file(anim, savepath, rewrite=False, fps=10, bitrate=-1):
     """
     Saves matplotlib animation object to file
@@ -158,7 +225,27 @@ def anim_to_file(anim, savepath, rewrite=False, fps=10, bitrate=-1):
     else:
         raise ValueError(f'incompatible file format found: {fileformat}. check savepath?')
 
-    anim.save(savepath, writer=writer)
+    anim.save(savepath, writer=writer, dpi=300)
+
+
+def cmap_bbr():
+    """
+    blue black red diverging colormap
+    """
+    cmap_path = Path(__file__).resolve().parent / '../styles/cmap_blueblackred.npy'
+    cmap_bbr = mpl.colors.LinearSegmentedColormap.from_list(
+        'bbr', np.load(cmap_path))
+    return cmap_bbr
+
+def cmap_gcamp():
+    """
+    black/green/bright green cmap for GCaMP
+    """
+    colors = ['black', 'green', 'lime']
+    cmap = mpl.colors.LinearSegmentedColormap.from_list(
+        'gcamp', colors)
+    return cmap
+
 
 def heatmap(x, y, **kwargs):
     """
