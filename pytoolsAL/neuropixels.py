@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 
 from IPython.display import display
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 import numpy as np
 import os
 from pathlib import Path
 import pytoolsAL as ptAL
+import scipy
 from scipy.optimize import curve_fit
 import shutil
 import sys
 import warnings
 
 sys.path.append('C://Users/anna/Repositories/Pipelines/ephys/qc')
-import single_units_wrapper as qc
+# import single_units_wrapper as qc
+sys.path.append('C://Users/anna/Repositories/slidingRefractory/python')
+import slidingRP as rpqc
 
 def copy_server_data(server_dir, local_dir, mn, file_lim_bytes=1e9, verbose=0):
     """
@@ -87,6 +92,9 @@ class RainierData:
         self.spikes = None
         self._get_session_dir()
 
+        self.rp_pass = None
+        self.mincont = None
+
         self.spk_mat = None
         self.positions = None
         self.spk_mat_norm = None
@@ -125,6 +133,9 @@ class RainierData:
         else:
             # if just one (expected), set path variables
             p_subs = os.listdir(self.sessdir / probedir[0])
+            if len(p_subs) == 1:
+                probedir[0] = Path(probedir[0])/p_subs[0]
+
             # p_sub = p_subs[probenum]
             self.probedir = self.sessdir / probedir[0]
 
@@ -150,18 +161,21 @@ class RainierData:
                         raise FileNotFoundError(f'file {f} not found in blue nor in corr')
 
     def find_flipper_offset(self):
-        npys = self.npys
-        sync1 = npys[f'{self.probe}_sync']
-        sync2 = npys['tl_sync']
-
-        offsets = sync1 - sync2
-        std = np.std(offsets)
-
-        if std > 1e-3:
-            warnings.warn(f'flipper offsets standard deviation is {std:4f}')
-
-        mean_offset = np.mean(offsets)
-        self.mean_offset = mean_offset
+        """
+        """
+        warnings.warn('this is deprecated, do we still need it?')
+        # npys = self.npys
+        # sync1 = npys[f'{self.probe}_sync']
+        # sync2 = npys['tl_sync']
+        #
+        # offsets = sync1 - sync2
+        # std = np.std(offsets)
+        #
+        # if std > 1e-3:
+        #     warnings.warn(f'flipper offsets standard deviation is {std:4f}')
+        #
+        # mean_offset = np.mean(offsets)
+        # self.mean_offset = mean_offset
 
     def sync_timestamps(self, sync1=None, timestamps2=None):
         """
@@ -176,51 +190,88 @@ class RainierData:
         Returns:
             synced: timestamps2 adjusted to align with timestamps1
         """
-        self.find_flipper_offset()
-        mean_offset = self.mean_offset
-        npys = self.npys
-        if sync1 is None:
-            warnings.warn(f'no args passed to sync_timestamps - defaulting to sync imaging to probe')
-            timestamps2 = npys['corr/svdTemporalComponents_corr.Timestamps']
-
-        synced = (timestamps2 + mean_offset).reshape(-1)
-
-        self.flipper_tstamps_sync = synced
+        warnings.warn('this is deprecated, do we still need it?')
+        # self.find_flipper_offset()
+        # mean_offset = self.mean_offset
+        # npys = self.npys
+        # if sync1 is None:
+        #     warnings.warn(f'no args passed to sync_timestamps - \
+        #                   defaulting to sync imaging to probe')
+        #     timestamps2 = npys['corr/svdTemporalComponents_corr.Timestamps']
+        #
+        # synced = (timestamps2 + mean_offset).reshape(-1)
+        #
+        # self.flipper_tstamps_sync = synced
 
     def get_positions(self):
         chan_pos = self.npys['channel_positions']
-        max_channels = find_max_channels(self.npys['templates'])
+        max_channels = _find_max_channels(self.npys['templates'])
         neuron_pos = chan_pos[max_channels]
+
+        if self.rp_pass is not None:
+            neuron_pos = neuron_pos[self.rp_pass]
 
         self.positions = neuron_pos
 
-    def run_refrac_qc(self, bin_size=0.25, thresh=0.1,
-                      accept_thresh=0.1, drop=True):
+    def run_refrac_qc(self, threshold=10, verbose=0, doPlot=True, drop=True):
         """
         run the slidingRP_viol qc function on all neurons
         if drop, then drop the failed ones from spk_mat, neurons, spikes, spk_rate
         otherwise, return the boolean accept/reject array
+
+        Args:
+            threshold: cutoff for minimum contamination at 90% confidence
+            verbose: spits out progress
+            doPlot: visualize hist of all neurons
+            drop: whether to drop failed neurons
         """
-        rp_pass = []
-        for spikes in self.spikes:
-            accept = qc.slidingRP_viol(spikes)
-            rp_pass.append(accept)
+        try:
+            rp_mincont = np.load(self.probedir / 'min_cont.npy')
+            print('qc save file found')
 
-        rp_pass = np.array(rp_pass, dtype=bool)
+        except:
+            print('first time running qc, takes a minute')
+            dsp = display(display_id=True)
+
+            rp_mincont = []
+            spk_time = self.npys['spike_times']
+            spk_clus = self.npys['spike_clusters']
+
+            for iS, spikes in enumerate(self.spikes):
+                if verbose:
+                    dsp.update(f'cluster {iS}/{len(self.spikes)}')
+                mincont = rpqc.slidingRP(
+                    spikes, params={'sampleRate': 30000,
+                                    'binSizeCorr': 1/30000}
+                                         )[1]
+
+                rp_mincont.append(mincont)
+            rp_mincont = np.array(rp_mincont)
+            np.save(self.probedir / 'min_cont.npy', rp_mincont)
+
+        self.mincont = rp_mincont
+
+        if doPlot:
+            hist_mincont = rp_mincont[rp_mincont != np.nan]
+            num_nans = len(rp_mincont[rp_mincont == np.nan])
+            f = plt.figure(figsize=(3, 3))
+            plt.hist(hist_mincont, bins=20, rwidth=0.9)
+            # plt.title(f'excluded {num_nans} nans')
+            plt.xlabel('minimum contamination')
+
+        rp_pass = rp_mincont < threshold
         print(f'{np.sum(rp_pass)}/{len(self.neurons)} neurons passed')
-
         self.rp_pass = rp_pass
 
-        if drop:
-            self.neurons = self.neurons[rp_pass]
-            self.spikes = self.spikes[rp_pass]
+        self.neurons = self.neurons[rp_pass]
+        self.spikes = self.spikes[rp_pass]
+        self.spk_mat = self.spk_mat[self.neurons]
 
-            self.spk_mat = self.spk_mat[self.neurons]
+        try:
             self.spk_rate = self.spk_rate[self.neurons]
             self.positions = self.positions[self.neurons]
-
-        else:
-            return rp_pass
+        except:
+            pass
 
     def separate_spikes(self):
         """
@@ -249,7 +300,7 @@ class RainierData:
         self.spikes = spks / 3e4  # sample rate, may want to set this
         # programmatically in future
 
-    def bin_spikes(self, bins, spks=None, set_self_matrix=False):
+    def bin_spikes(self, bins, binsize_s, spks=None, set_self_matrix=False):
         """
         yep
 
@@ -263,29 +314,47 @@ class RainierData:
         Returns:
             spks_mat: array in shape [neurons, bins]
         """
+        # first look for a prebinned version (e.g. if this has been run before)
+        binsize_ms = int(binsize_s*1000)
+        binned_file = self.probedir / f'binned_{binsize_ms}ms.npy'
+
+        # keep this part even if loading from file -
+        #   it's fast and useful for rasters
         if spks is None:
             self.separate_spikes()
             spks = self.spikes
 
-        # if there are spikes outside of the supplied bins,
-        # drop said spikes
-        spks_clipped = []
-        for spk_row in spks:
-            spk_row = spk_row[spk_row < bins[-1]]
-            spks_clipped.append(spk_row)
+        # try to load file first
+        try:
+            spk_mat = np.load(binned_file)
+            if set_self_matrix:
+                self.spk_mat = spk_mat
+                return None
+            else:
+                return spk_mat
 
-        spk_mat = np.zeros((np.max(self.neurons) + 1, len(bins) - 1))
-        # spk_mat[:] = np.nan
+        except:
+            # if there are spikes outside of the supplied bins,
+            # drop said spikes
+            spks_clipped = []
+            for spk_row in spks:
+                spk_row = spk_row[spk_row < bins[-1]]
+                spks_clipped.append(spk_row)
 
-        for iN, neur in enumerate(spks_clipped):
-            hist, edges = np.histogram(neur, bins, density=False)
-            neur_num = self.neurons[iN]
-            spk_mat[neur_num] = hist
+            spk_mat = np.zeros((np.max(self.neurons) + 1, len(bins) - 1))
+            # spk_mat[:] = np.nan
 
-        if set_self_matrix:
-            self.spk_mat = spk_mat
-        else:
-            return spk_mat
+            for iN, neur in enumerate(spks_clipped):
+                hist, edges = np.histogram(neur, bins, density=False)
+                neur_num = self.neurons[iN]
+                spk_mat[neur_num] = hist
+
+            np.save(binned_file, spk_mat)
+            if set_self_matrix:
+                self.spk_mat = spk_mat
+                return None
+            else:
+                return spk_mat
 
     def norm_spike_mat(self, cfactor=0.5):
         """
@@ -304,12 +373,130 @@ class RainierData:
         """
         end_time = np.ceil(np.max(self.npys['spike_times'] / 3e4))
         sec_bins = np.arange(0, end_time, 1)
-        spk_rate = np.mean(self.bin_spikes(sec_bins, set_self_matrix=False), axis=1)
+        spk_rate = np.mean(self.bin_spikes(sec_bins, 1, set_self_matrix=False), axis=1)
 
+        if self.rp_pass is not None:
+            spk_rate = spk_rate[self.rp_pass]
         self.spk_rate = spk_rate
 
 
-def find_max_channels(templates):
+    def plot_drift_map(self, by_shank=False):
+        probedir = self.probedir
+        _plot_drift_map(probedir, by_shank=by_shank)
+
+    def find_max_channels(self):
+        templates = np.load(self.probedir / 'templates.npy')
+        return _find_max_channels(templates)
+
+    def bin_neurons_positions(self, xbins, ybins):
+        maxchans = self.find_max_channels()
+        chanpos = np.load(self.probedir / 'channel_positions.npy')
+        return _bin_neurons_positions(chanpos[maxchans], xbins, ybins)
+
+
+def _plot_drift_map(probedir, by_shank=False):
+
+    chanpos = np.load(probedir / 'channel_positions.npy')
+    xcoords = chanpos[:, 0]
+    ycoords = chanpos[:, 1]
+
+    pc_feat = np.load(probedir / 'pc_features.npy')
+    pc_feat = pc_feat[:, 0] # keep first pc only
+    pc_feat = np.clip(pc_feat, a_min=1e-6, a_max=None) # close to but not 0... for dividing
+    pc_feat_ind = np.load(probedir / 'pc_feature_ind.npy')
+    spike_temps = np.load(probedir / 'spike_templates.npy')
+
+    temps = np.load(probedir / 'templates.npy')
+    amps = np.load(probedir / 'amplitudes.npy')
+    spike_times = np.load(probedir / 'spike_times.npy')
+
+    spike_feat_ind = np.squeeze(pc_feat_ind[spike_temps])
+    spike_feat_ycoords = ycoords[spike_feat_ind]
+    spike_depths = np.sum(spike_feat_ycoords*np.square(pc_feat), axis=1) // np.sum(np.square(pc_feat), axis=1)
+    spike_depths = spike_depths.reshape(-1, 1)
+
+    n_color_bins = 20
+    amp_range = np.quantile(amps, [0.1, 0.9])
+    amp_bins = np.linspace(amp_range[0], amp_range[1], n_color_bins)
+    color_bins = np.linspace(0, 1, n_color_bins)
+    colors = mpl.cm.get_cmap('gray_r')
+
+    max_chans = _find_max_channels(temps)
+
+    spike_xcoords = xcoords[max_chans[spike_temps]]
+    if by_shank == True:
+        x_uni = np.unique(xcoords)
+        f = plt.figure(figsize=(8, 4))
+        gs = mpl.gridspec.GridSpec(1, 4)
+
+        x_ugroup = x_uni.reshape(4, 2)
+
+        for i, cols in enumerate(x_ugroup):
+            spks_col0 = np.r_[spike_xcoords.ravel() == cols[0]].ravel()
+            spks_col1 = np.r_[spike_xcoords.ravel() == cols[1]].ravel()
+
+            pass_spks = spks_col0 | spks_col1
+            ax = plt.subplot(gs[i])
+
+            for ib in range(n_color_bins-1):
+                plot_spks = np.r_[amps > amp_bins[ib]].ravel() & \
+                    np.r_[amps <= amp_bins[ib+1]].ravel() & \
+                    pass_spks
+
+                plt.scatter(spike_times[plot_spks]/30000, spike_depths[plot_spks], lw=0, s=3,
+                            c=np.r_[colors(color_bins[ib])].reshape(1, -1))
+
+            plt.ylim(np.min(ycoords), np.max(ycoords))
+            if i == 0:
+                plt.ylabel('depth ($\mu$m)')
+                plt.figtext(0.5, 0, 'time (s)')
+            else:
+                plt.yticks([])
+                ax.spines['left'].set_visible(False)
+            # plt.ylim(400, 1400)
+
+
+    else:
+        f = plt.figure(figsize=(5, 3))
+        for i in range(n_color_bins-1):
+            # plot_spks = amps[(amps > color_bins[i]) & (amps <= color_bins[i+1])]
+            plot_spks = np.r_[amps > amp_bins[i]].ravel() & np.r_[amps <= amp_bins[i+1]].ravel()
+            plt.scatter(spike_times[plot_spks]/30000, spike_depths[plot_spks], lw=0, s=3,
+                        c=np.r_[colors(color_bins[i])].reshape(1, -1))
+
+        plt.xlabel('time (s)')
+        plt.ylabel('depth ($\mu$m)')
+
+def vis_resp_ttest(spkmat, stim_ixs, binsize_s, prestim_s, poststim_s):
+    """
+    count up spikes before and after stim times
+    run quick paired t-test
+    """
+    prestim_ix = int(np.round(prestim_s/binsize_s))
+    poststim_ix = int(np.round(poststim_s/binsize_s))
+
+    def prepostcounts(a):
+        pres = []
+        posts = []
+        for i in stim_ixs:
+            pre_count = np.sum(a[i+prestim_ix:i])
+            post_count = np.sum(a[i:i+poststim_ix])
+
+            pres.append(pre_count)
+            posts.append(post_count)
+        return [pres, posts]
+
+    rmap = map(prepostcounts, spkmat)
+    counts = list(rmap)
+    all_counts = np.array(counts)
+
+    stat, pvals = scipy.stats.ttest_rel(all_counts[:, 0],
+        all_counts[:, 1], axis=1)
+
+    return pvals
+
+
+def _find_max_channels(templates):
     """
     Given templates.npy file, find the channel with the highest template
     (i.e. neuron) signal (defined by max - min of timesamples).
@@ -325,7 +512,7 @@ def find_max_channels(templates):
     return max_channels
 
 
-def bin_neurons_positions(max_chans, xbins, ybins):
+def _bin_neurons_positions(max_chanpos, xbins, ybins):
     """
 
     Args:
@@ -339,8 +526,9 @@ def bin_neurons_positions(max_chans, xbins, ybins):
 
     """
     # determine which x and y bins each neuron belongs to
-    x_ix = np.digitize(max_chans[:, 0], xbins)
-    y_ix = np.digitize(max_chans[:, 1], ybins)
+    # for future i think histogram is better for this but o well
+    x_ix = np.digitize(max_chanpos[:, 0], xbins)
+    y_ix = np.digitize(max_chanpos[:, 1], ybins)
 
     # make lists of neurons in each pair of x/y bins
     bins_dict = {}
