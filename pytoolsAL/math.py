@@ -3,6 +3,7 @@
 import datetime
 import itertools
 from IPython.display import clear_output, display, HTML
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import numbers
@@ -126,7 +127,8 @@ class ReducedRankRegressor(object):
         - X: n-by-d matrix of features.
         - Y: n-by-D matrix of targets
         - rank: either 'max' or int; rank constraint
-        - reg: regularization parameter (optional)
+        - reg: regularization parameter (optional). either single value OR
+            list of values (size equal to X input)
 
     """
     def __init__(self, X, Y, rank=None, reg=None, reg_matrix = None,
@@ -191,15 +193,12 @@ class ReducedRankRegressor(object):
         rank = self.rank
         reg = self.reg
 
-        if self.reg_mat is not None:
-            reg_eye = self.reg_mat
-        else:
-            reg_eye = reg * np.eye(np.size(X, 1), dtype='uint8')
+        reg_eye = reg * np.eye(np.size(X, 1), dtype='uint8')
 
-            # don't apply regularization to intercept col
-            reg_eye[intercept_col, intercept_col] = 0
-            # X = np.vstack((X, reg_eye))
-            # Y = np.vstack((Y, np.zeros((X.shape[1], Y.shape[1]))))
+        # don't apply regularization to intercept col
+        reg_eye[intercept_col, intercept_col] = 0
+        # X = np.vstack((X, reg_eye))
+        # Y = np.vstack((Y, np.zeros((X.shape[1], Y.shape[1]))))
 
         if self.verbose > 0:
             print('setting CXX and CXY...', end=' ')
@@ -222,19 +221,35 @@ class ReducedRankRegressor(object):
         if self.verbose > 0:
             print('done.')
 
-    def predict(self, X):
+    def predict(self, X, rank=None):
         """
         Predict Y from X based on fit A and B above
+        if rank is None, use full rank
+        otherwise drop from A
         """
-        A = self.A
-        B = self.B
+        if rank is None:
+            A = self.A
+            B = self.B
+
+        else:
+            A = self.A[:, :rank]
+            B = self.B[:rank, :]
 
         if np.size(np.shape(X)) == 1:
-            X = np.reshape(X, (-1, 1))
+            X = X.reshape(-1, 1)
         pred = np.dot(X, np.dot(A, B).T)
         # convert from matrix to array and transpose - easier for later
         pred = np.asarray(pred.T)
         return pred
+
+
+def custom_reg_list(predictors, regs):
+    reg_out = []
+    for iP, pred in enumerate(predictors):
+        ncols = pred.shape[1]
+        reg_r = np.ones(ncols) * regs[iP]
+        reg_out.extend(reg_r)
+    return reg_out
 
 
 def rrr_optimize(ranks, regs, x_train, y_train, x_test, y_test):
@@ -252,12 +267,11 @@ def rrr_optimize(ranks, regs, x_train, y_train, x_test, y_test):
     param_results = np.zeros((len(param_combos)))
 
     # set up a figure to display results as they come in
-    f = plt.figure(figsize=(4, 4))
-    ax = plt.gca()
-    ax = ptAL.plotting.apply_heatmap_defaults(ax)
     im = plt.imshow(np.zeros((len(ranks), len(regs))),
                     extent=[0, len(regs), ranks[-1], ranks[0]],
                     clim=[0, 1], aspect='auto')
+    ax = plt.gca()
+    ax = ptAL.plotting.apply_heatmap_defaults(ax)
     plt.ylabel('rank')
     plt.xlabel('regularization')
 
@@ -271,40 +285,35 @@ def rrr_optimize(ranks, regs, x_train, y_train, x_test, y_test):
     cb = ptAL.plotting.add_colorbar(ax)
     cb.ax.set_ylabel('cross-validated variance explained')
 
-    # set up objects to update figure/timing
-    dsp = display(display_id=True)
     dsp2 = display(display_id=True)
-    dspfig = display(f, display_id=True)
+    results = np.zeros((len(ranks), len(regs)))
 
-    for iP, params in enumerate(param_combos):
-        rank, reg = params
-        dsp.update(f'starting rank={rank}, reg={reg} ({iP+1}/{len(param_combos)})')
-
-        rrr = ReducedRankRegressor(x_train, y_train, rank=rank, reg=reg)
+    for iReg, reg in enumerate(regs):
+        rrr = ReducedRankRegressor(x_train, y_train, rank='max', reg=reg)
         rrr.fit()
 
-        y_pred = rrr.predict(x_test)
-        score = score_var_explained(y_test, y_pred.T,
-                                    multioutput='variance_weighted')
-        param_results[iP] = score
+        for iRank, rank in enumerate(ranks):
+            y_pred = rrr.predict(x_test, rank=rank)
+            score = score_r2(y_test, y_pred.T,
+                multioutput='variance_weighted')
+            results[iRank, iReg] = score
+            max_ix = np.unravel_index(np.argmax(results),
+                (len(ranks), len(regs)))
 
-        total_elapsed = (datetime.datetime.now() - start_time).total_seconds()
-        dsp2.update(f'elapsed: {total_elapsed/60:.2f} min')
+            total_elapsed = (datetime.datetime.now() - start_time).total_seconds()
+            dsp2.update(f'elapsed: {total_elapsed/60:.2f} min')
 
-        results_reshape = param_results.reshape((len(ranks), len(regs)))
-        max_ix = np.where(results_reshape == np.max(results_reshape))
+            ax.set_title(f'best: rank={ranks[max_ix[0]]}, reg={regs[max_ix[1]]:.2e}')
+            im.set_data(results)
+            im.set_clim(0, np.max(results)*1.2)
+            cb.ax.set_ylabel('cross-validated $R^2$')
+            clear_output(wait=True)
 
-        ax.set_title(f'best: rank={ranks[max_ix[0][0]]}, reg={regs[max_ix[1][0]]:.2e}')
-        im.set_data(results_reshape)
-        im.set_clim(0, np.max(results_reshape)*1.2)
-        cb.ax.set_ylabel('cross-validated variance explained')
-        dspfig.update(f)
-        clear_output(wait=True)
-    return results_reshape
+    return results, regs[max_ix[1]]
 
 
 def rrr_optimize_rank(ranks, x_train, y_train, x_test, y_test, reg=None,
-                reg_matrix=None):
+                      doPlot=True):
     """
     Evaluate many ranks with fixed regularization
     Args:
@@ -314,20 +323,45 @@ def rrr_optimize_rank(ranks, x_train, y_train, x_test, y_test, reg=None,
     dsp = display(display_id=True)
     for iR, rank in enumerate(ranks):
         dsp.update(f'optimizing rank: starting {iR+1} of {len(ranks)}')
-        rrr = ReducedRankRegressor(x_train, y_train, rank=rank, reg=reg,
-                reg_matrix=reg_matrix)
+        rrr = ReducedRankRegressor(x_train, y_train, rank=rank, reg=reg)
         rrr.fit()
 
         y_pred = rrr.predict(x_test)
-        score = score_var_explained(y_test, y_pred.T,
-                                    multioutput='variance_weighted')
+        score = score_r2(y_test, y_pred.T,
+                         multioutput='variance_weighted')
         scores.append(score)
     scores = np.array(scores)
     return scores
 
 
+def rrr_optimize_multipred(predictors_train, predictors_test,
+                           ranks, regs, y_train, y_test):
+    """
+    """
+    n_cols = 2
+    n_rows = int(np.ceil(len(predictors_train)/n_cols))
+
+    f = plt.figure(figsize=(8, 3*n_rows))
+    gs = mpl.gridspec.GridSpec(n_rows, n_cols)
+    optimal_regs = []
+    for iP in range(len(predictors_train)):
+        ax = plt.subplot(gs[iP])
+        scores, opt_reg = rrr_optimize(ranks, regs, predictors_train[iP],
+                                       y_train, predictors_test[iP], y_test)
+        optimal_regs.append(opt_reg)
+    return optimal_regs
+
+
 def score_mse(y_true, y_pred):
     score = sklearn.metrics.mean_squared_error(y_true, y_pred)
+    return score
+
+
+def score_r2(y_true, y_pred, multioutput=None):
+    """
+    'raw_values', 'variance_weighted'
+    """
+    score = sklearn.metrics.r2_score(y_true, y_pred, multioutput=multioutput)
     return score
 
 
@@ -336,6 +370,7 @@ def score_var_explained(y_true, y_pred, multioutput=None):
     'raw_values', 'variance_weighted'
     """
     score = sklearn.metrics.explained_variance_score(y_true, y_pred, multioutput=multioutput)
+    warnings.warn('VARIANCE EXPLAINED ALARM, CHANGE TO R2')
     return score
 
 
