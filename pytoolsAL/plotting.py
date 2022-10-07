@@ -15,7 +15,7 @@ import ipywidgets as widgets
 def get_default_colors():
     return plt.rcParams['axes.prop_cycle'].by_key()['color']
 
-def add_colorbar(ax, mappable=None):
+def add_colorbar(ax, mappable=None, shrink=1):
     """
     wrapper function to add a properly scaled colorbar and apply
     styling defaults
@@ -24,9 +24,9 @@ def add_colorbar(ax, mappable=None):
     """
     cax = make_colorbar_axes(ax)
     if mappable is not None:
-        cb = plt.colorbar(cax=cax, mappable=mappable)
+        cb = plt.colorbar(cax=cax, mappable=mappable, shrink=shrink)
     else:
-        cb = plt.colorbar(cax=cax)
+        cb = plt.colorbar(cax=cax, shrink=shrink)
     cb = apply_colorbar_defaults(cb)
     return cb
 
@@ -160,36 +160,18 @@ def get_plottable_positions(positions, jitter_factor=1):
     for i, count in enumerate(p_counts):
         duplicate_pos = pos[i]
         neurs_p = np.where((positions == duplicate_pos).all(axis=1))[0]
-        if count == 2:
-            n1, n2 = neurs_p
-            pos_jittered[n1, 0] += -0.15*jitter_factor
-            pos_jittered[n2, 0] += 0.15*jitter_factor
-        if count == 3:
-            n1, n2, n3 = neurs_p
-            pos_jittered[n1, 0] += -0.3*jitter_factor
-            pos_jittered[n3, 0] += 0.3*jitter_factor
-        if count == 4:
-            n1, n2, n3, n4 = neurs_p
-            pos_jittered[n1, 0] += -0.45*jitter_factor
-            pos_jittered[n2, 0] += -0.15*jitter_factor
-            pos_jittered[n3, 0] += 0.15*jitter_factor
-            pos_jittered[n4, 0] += 0.45*jitter_factor
-        if count == 5:
-            n1, n2, n3, n4, n5 = neurs_p
-            pos_jittered[n1, 0] += -0.6*jitter_factor
-            pos_jittered[n2, 0] += -0.3*jitter_factor
-            pos_jittered[n4, 0] += 0.3*jitter_factor
-            pos_jittered[n5, 0] += 0.6*jitter_factor
-        if count == 6:
-            n1, n2, n3, n4, n5, n6 = neurs_p
-            pos_jittered[n1, 0] += -0.75*jitter_factor
-            pos_jittered[n2, 0] += -0.45*jitter_factor
-            pos_jittered[n3, 0] += -0.15*jitter_factor
-            pos_jittered[n4, 0] += 0.15*jitter_factor
-            pos_jittered[n5, 0] += 0.45*jitter_factor
-            pos_jittered[n6, 0] += 0.75*jitter_factor
-        if count > 6:
-            raise NotImplementedError('sry future me')
+        if count % 2 == 1:
+            c_range = count - 1
+            cmin, cmax = -c_range/2, c_range/2
+            jitters = np.arange(cmin, cmax+1)*0.3*jitter_factor
+
+        if count % 2 == 0:
+            c_range = np.arange(count).astype('float64')
+            c_range -= np.mean(c_range)
+            jitters = c_range*0.3*jitter_factor
+
+        for iN, neuron in enumerate(neurs_p):
+            pos_jittered[neuron] += jitters[iN]
 
     return pos_jittered, x_um, x_plot
 
