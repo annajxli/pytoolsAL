@@ -1,22 +1,26 @@
-name: anna37
+name: anna311
 channels:
   - conda-forge
   - defaults
 dependencies:
-  - python=3.7
+  - python=3.11
   - pip
 
-  - ipympl=0.9.0
-  - ipywidgets=7.6.0
-  - jupyterlab=3.2.5
+  - imageio[ffmpeg]
+  - imageio[ffmpeg]
+  - ipympl
+  - ipywidgets
+  - jupyterlab
   - jupytext
-  - numpy=1.21.4
-  - numba=0.43.1
-  - matplotlib=3.5.1
-  - pandas=1.3.5
-  - scipy=1.7.3
-  - scikit-learn=1.0.1
-  - seaborn 0.11.2
+  - numpy
+  - numba
+  - matplotlib
+  - opencv-python
+  - pandas
+  - scipy
+  - scikit-learn
+  - seaborn
+  - tifffile
 
   - pip:
     - -e git+https://github.com/annajxli/pytoolsAL.git#egg=pytoolsAL

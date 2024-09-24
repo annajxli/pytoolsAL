@@ -83,7 +83,7 @@ def reconstruct_from_svd(svd_temp, svd_spat, t=None, x=None, y=None, comps=200):
     return recon_im
 
 
-def bandpass_and_hilbert(im, fs, band=[3, 6], verbose=0):
+def bandpass_and_hilbert(im, fs, band=[3, 8], verbose=0):
     """
     compute phasemap for image stack
     needs ~1-2 seconds to be accurate
@@ -96,14 +96,14 @@ def bandpass_and_hilbert(im, fs, band=[3, 6], verbose=0):
         im_phasemap: image stack with phasemap transform
     """
     # right now - hardcode to 512x512 image
-    n_frames = im.shape[0]
-    im_r = im.reshape(n_frames, 512*512)
+    n_frames, ypx, xpx = im.shape
+    im_r = im.reshape(n_frames, ypx*xpx)
 
     # butterworth bandpass filter
     if verbose > 0:
         print('applying butterworth filter')
     b, a = scipy.signal.butter(N=2, Wn=np.r_[band]/(fs/2), btype='bandpass', output='ba')
-    im_filtered = scipy.signal.lfilter(b, a, im_r, axis=0)
+    im_filtered = scipy.signal.filtfilt(b, a, im_r, axis=0)
 
     if verbose > 0:
         print('performing hilbert transform')
@@ -116,9 +116,25 @@ def bandpass_and_hilbert(im, fs, band=[3, 6], verbose=0):
     im_phasemap = np.angle(im_transform, deg=True)
 
     # return to 2d
-    im_phasemap = im_phasemap.reshape(n_frames, 512, 512)
+    im_phasemap = im_phasemap.reshape(n_frames, ypx, xpx)
 
     return im_phasemap
+
+
+def interpolate_components(comps, timestamps_old, timestamps_new):
+    """
+    apply 1d interp along many rows
+    is this the same thing as 2d interp?
+    idk since i want rows independent
+    """
+    interpolated = np.zeros((len(comps), len(timestamps_new)))
+    for iC, comp in enumerate(comps):
+        interpfunc = scipy.interpolate.interp1d(timestamps_old, comp,
+            kind='linear', fill_value='extrapolate')
+        comp_interp = interpfunc(timestamps_new)
+        interpolated[iC] = comp_interp
+
+    return interpolated
 
 
 class FacemapLoader:
@@ -320,7 +336,7 @@ def avi_to_tif(path_to_im):
     tif_out = impath.replace('.avi', '.tif')
 
     avi_reader = imageio.get_reader(impath)
-    tif_writer = imageio.get_writer(tif_out)
+    tif_writer = imageio.get_writer(tif_out, bigtiff=True)
 
     for im in avi_reader:
         tif_writer.append_data(im)

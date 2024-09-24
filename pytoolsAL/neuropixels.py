@@ -12,11 +12,11 @@ from scipy.optimize import curve_fit
 import shutil
 import sys
 import warnings
-
-sys.path.append('C://Users/anna/Repositories/Pipelines/ephys/qc')
 # import single_units_wrapper as qc
 sys.path.append('C://Users/anna/Repositories/slidingRefractory/python')
+sys.path.append('C://Users/anna/Repositories/noiseCutoff')
 import slidingRP as rpqc
+# import computeNoiseCutoff as noisecf
 
 def copy_server_data(server_dir, local_dir, mn, file_lim_bytes=1e9, verbose=0):
     """
@@ -69,13 +69,82 @@ def copy_server_data(server_dir, local_dir, mn, file_lim_bytes=1e9, verbose=0):
             print(f'    skipped {skipped} oversize files')
 
 
+def compile_separate_sorting(resultsdir, shanks, output):
+    """
+    if shanks were sorted separately, recombine files into one
+    Args:
+        resultsdir: folder where separate sorted folders are
+        shanks: list of shanks to combine
+        output: folder to place compiled files
+    """
+    resultsdir = Path(resultsdir)
+    output = Path(output)
+    files = ['channel_positions.npy', 'spike_clusters.npy', 'spike_times.npy', 'templates.npy']
+
+    comp_pos = []
+    comp_clus = []
+    comp_times = []
+    comp_temps = []
+
+    n_per_shank = []
+
+    # hardcoding ways to combine files...
+    last_cluster = -1
+    for shank in shanks:
+        current_dir = resultsdir/shank
+        comp_pos.append(np.load(current_dir/files[0]))
+
+        clus = np.load(current_dir/files[1]).ravel()
+        n_per_shank.append(np.max(np.unique(clus))+1)
+
+        # don't overlap clusters: add # of last cluster + 1
+        # so if shank 0 ended at cluster 76, cluster 0 of shank 1 becomes 77
+        current_max = np.max(clus)
+        clus_offset = clus + last_cluster + 1
+        last_cluster += current_max + 1
+        comp_clus.append(clus_offset)
+
+        comp_times.append(np.load(current_dir/files[2]).ravel())
+        comp_temps.append(np.load(current_dir/files[3]))
+
+    # print(n_per_shank)
+    pos_all = np.vstack(comp_pos)
+    comp_clus = np.concatenate(comp_clus)
+    comp_times = np.concatenate(comp_times)
+
+    # sort clus/times so that it's ordered in time
+    temporal_order = np.argsort(comp_times)
+    comp_times = comp_times[temporal_order]
+    comp_clus = comp_clus[temporal_order]
+
+    # hardcode templates... annoying
+    cumulative_n = np.cumsum(n_per_shank)
+
+    templates_all = np.zeros((np.sum(n_per_shank), 82, pos_all.shape[0]))
+
+    templates_all[:cumulative_n[0], :, :96] = comp_temps[0]
+    templates_all[cumulative_n[0]:cumulative_n[1], :, 96:192] = comp_temps[1]
+    templates_all[cumulative_n[1]:cumulative_n[2], :, 192:288] = comp_temps[2]
+    templates_all[cumulative_n[2]:cumulative_n[3], :, 288:] = comp_temps[3]
+
+    np.save(output/'channel_positions.npy', pos_all)
+    np.save(output/'spike_clusters.npy', comp_clus)
+    np.save(output/'spike_times.npy', comp_times)
+    np.save(output/'templates.npy', templates_all)
+
 class RainierData:
-    def __init__(self, datadir, mn, td, en, probe=None, label=None):
+    def __init__(self, datadir, dataserver, mn, td, en, probe=None, label=None):
+        """
+
+        """
+
         if isinstance(datadir, str):
             datadir = pathlib.Path(datadir)
 
         self.sessdir = None
+        self.servdir = None
         self.datadir = datadir
+        self.dataserver = dataserver
         self.probedir = None
 
         self.mn = mn
@@ -97,6 +166,7 @@ class RainierData:
 
         self.spk_mat = None
         self.positions = None
+        self.norm_factor = None
         self.spk_mat_norm = None
 
         if self.probe is not None:
@@ -108,11 +178,17 @@ class RainierData:
         """
         Find dir corresponding to this mouse, date, experiment
         """
-        sessdir = self.datadir / self.mn / self.td / self.en
+        sessdir = self.dataserver / self.mn / self.td / self.en
         if not os.path.isdir(sessdir):
             raise FileNotFoundError(f'{sessdir} not found. Exists?')
         else:
             self.sessdir = sessdir
+
+        servdir = self.dataserver / self.mn / self.td / self.en
+        if not os.path.isdir(servdir):
+            raise FileNotFoundError(f'{servdir} not found. Exists?')
+        else:
+            self.servdir = servdir
 
     def _get_probe_dir(self):
         """
@@ -132,12 +208,13 @@ class RainierData:
                              + ' Not equipped to handle.')
         else:
             # if just one (expected), set path variables
-            p_subs = os.listdir(self.sessdir / probedir[0])
-            if len(p_subs) == 1:
-                probedir[0] = Path(probedir[0])/p_subs[0]
+            # for p in os.listdir(self.sessdir / probedir[0]):
+            for root, dirs, files in os.walk(self.sessdir/probedir[0]):
+                if 'spike_times.npy' in files:
+                    self.probedir = Path(root)
 
             # p_sub = p_subs[probenum]
-            self.probedir = self.sessdir / probedir[0]
+            # self.probedir = self.sessdir / probedir[0]
 
     def load_npy_files(self, dtype, flist):
         dtypes_allow = ['ephys', 'wf', 'sync']
@@ -149,14 +226,14 @@ class RainierData:
                 self.npys[f] = np.load(self.probedir / f'{f}.npy')
         if dtype == 'sync':
             for f in flist:
-                self.npys[f] = np.load(self.sessdir / f'{f}.npy')
+                self.npys[f] = np.load(self.servdir / f'{f}.npy')
         if dtype == 'wf':
             for f in flist:
                 try:
-                    self.npys[f] = np.load(self.sessdir / 'corr' / f'{f}.npy')
+                    self.npys[f] = np.load(self.servdir / 'corr' / f'{f}.npy')
                 except FileNotFoundError:
                     try:
-                        self.npys[f] = np.load(self.sessdir / 'blue' / f'{f}.npy')
+                        self.npys[f] = np.load(self.servdir / 'blue' / f'{f}.npy')
                     except FileNotFoundError:
                         raise FileNotFoundError(f'file {f} not found in blue nor in corr')
 
@@ -213,7 +290,7 @@ class RainierData:
 
         self.positions = neuron_pos
 
-    def run_refrac_qc(self, threshold=10, verbose=0, doPlot=True, drop=True):
+    def run_refrac_qc(self, threshold=10, verbose=0, doPlot=False, drop=True):
         """
         run the slidingRP_viol qc function on all neurons
         if drop, then drop the failed ones from spk_mat, neurons, spikes, spk_rate
@@ -227,25 +304,30 @@ class RainierData:
         """
         try:
             rp_mincont = np.load(self.probedir / 'min_cont.npy')
-            print('qc save file found')
+            print('rfqc save file found')
 
         except:
-            print('first time running qc, takes a minute')
+            print('first time running rfqc, takes a minute')
             dsp = display(display_id=True)
 
             rp_mincont = []
             spk_time = self.npys['spike_times']
             spk_clus = self.npys['spike_clusters']
 
-            for iS, spikes in enumerate(self.spikes):
-                if verbose:
-                    dsp.update(f'cluster {iS}/{len(self.spikes)}')
-                mincont = rpqc.slidingRP(
-                    spikes, params={'sampleRate': 30000,
-                                    'binSizeCorr': 1/30000}
-                                         )[1]
+            spk_time_s = spk_time/3e4
+            rpMetrics, cont, rp, sc, frrd = rpqc.slidingRP_all(spk_time_s, spk_clus, 
+                                                               params={'sampleRate': 30000, 'binSizeCorr': 1/30000})
 
-                rp_mincont.append(mincont)
+            mincont = rpMetrics['minContWith90Confidence']
+            #for iS, spikes in enumerate(self.spikes):
+            #    if verbose:
+            #        dsp.update(f'cluster {iS}/{len(self.spikes)}')
+            #    mincont = rpqc.slidingRP(
+            #        spikes, params={'sampleRate': 30000,
+            #                        'binSizeCorr': 1/30000}
+            #                             )[1]
+
+             #   rp_mincont.append(mincont)
             rp_mincont = np.array(rp_mincont)
             np.save(self.probedir / 'min_cont.npy', rp_mincont)
 
@@ -263,8 +345,29 @@ class RainierData:
         print(f'{np.sum(rp_pass)}/{len(self.neurons)} neurons passed')
         self.rp_pass = rp_pass
 
-        self.neurons = self.neurons[rp_pass]
-        self.spikes = self.spikes[rp_pass]
+    def run_noisecutoff(self):
+        try:
+            spk_amps = self.npys['amplitudes']
+            spk_clus = self.npys['spike_clusters']
+
+        except:
+            self.load_npy_files('ephys', ['amplitudes', 'spike_clusters'])
+            spk_amps = self.npys['amplitudes']
+            spk_clus = self.npys['spike_clusters']
+
+        neurons, amps = separate_spikes(spk_amps, spk_clus)
+
+        passed = []
+        for iN, neuron in enumerate(neurons):
+            npass, _, _ = noisecf.noise_cutoff(amps[iN])
+            passed.append(npass)
+
+        self.nc_pass = passed
+
+    def remove_qc_fail(self):
+        passed = self.rp_pass
+        self.neurons = self.neurons[passed]
+        self.spikes = self.spikes[passed]
         self.spk_mat = self.spk_mat[self.neurons]
 
         try:
@@ -273,7 +376,7 @@ class RainierData:
         except:
             pass
 
-    def separate_spikes(self):
+    def _sep_spikes(self):
         """
         Given equal arrays of [spiketimes] and [spikeclusters]
         Find which spike times belong to each unique neuron (cluster)
@@ -281,31 +384,47 @@ class RainierData:
         Uses spike_times and spike_clusters from loaded npyps
         Assigns separated spikes to self.neurons and self.spikes
         """
-        spk_time = self.npys['spike_times']
-        spk_clus = self.npys['spike_clusters']
+        try:
+            spk_time = self.npys['spike_times']
+            spk_clus = self.npys['spike_clusters']
+
+        except:
+            self.load_npy_files('ephys', ['spike_times', 'spike_clusters'])
+            spk_time = self.npys['spike_times']
+            spk_clus = self.npys['spike_clusters']
 
         if len(spk_time) != len(spk_clus):
             raise ValueError('spike times and clusters have uneven lengths. '
                              + 'this should never happen ????')
 
-        neurons = np.unique(spk_clus)
-        spks = []
-        for neur in neurons:
-            ix = np.where(spk_clus == neur)
-            times = spk_time[ix]
-            spks.append(times)
-        spks = np.asarray(spks, dtype='object')
+        neurons, spks = separate_spikes(spk_time, spk_clus)
 
         self.neurons = neurons
-        self.spikes = spks / 3e4  # sample rate, may want to set this
-        # programmatically in future
+        self.spikes = spks
 
-    def bin_spikes(self, bins, binsize_s, spks=None, set_self_matrix=False):
+    def _binner(self, spks, bins):
+        spks_clipped = []
+        for spk_row in spks:
+            spk_row = spk_row[spk_row < bins[-1]]
+            spks_clipped.append(spk_row)
+
+        spk_mat = np.zeros((np.max(self.neurons) + 1, len(bins) - 1), dtype=np.float32)
+        # spk_mat[:] = np.nan
+
+        for iN, neur in enumerate(spks_clipped):
+            hist, edges = np.histogram(neur, bins, density=False)
+            neur_num = self.neurons[iN]
+            spk_mat[neur_num] = hist
+        return spk_mat
+
+    def bin_spikes(self, bins, binsize_s, loadsave=True,
+                    spks=None, set_self_matrix=False):
         """
         yep
 
         Args:
             bins: desired bin edges
+            loadsave: whether or not to try to load/save spike mats (eg False for shuffle)
             spks: (optional) external spike times, e.g. if shuffled
             set_self_matrix: (optional) whether or not to set internal spkmat argument
                 e.g. False when using this for spike rate
@@ -321,35 +440,31 @@ class RainierData:
         # keep this part even if loading from file -
         #   it's fast and useful for rasters
         if spks is None:
-            self.separate_spikes()
+            self._sep_spikes()
             spks = self.spikes
 
         # try to load file first
-        try:
-            spk_mat = np.load(binned_file)
-            if set_self_matrix:
-                self.spk_mat = spk_mat
-                return None
-            else:
-                return spk_mat
+        if loadsave:
+            try:
+                spk_mat = np.load(binned_file)
+                if set_self_matrix:
+                    self.spk_mat = spk_mat
+                    return None
+                else:
+                    return spk_mat
+            except FileNotFoundError:
+                spk_mat = self._binner(spks, bins)
+                np.save(binned_file, spk_mat)
+                if set_self_matrix:
+                    self.spk_mat = spk_mat
+                    return None
+                else:
+                    return spk_mat
 
-        except:
             # if there are spikes outside of the supplied bins,
             # drop said spikes
-            spks_clipped = []
-            for spk_row in spks:
-                spk_row = spk_row[spk_row < bins[-1]]
-                spks_clipped.append(spk_row)
-
-            spk_mat = np.zeros((np.max(self.neurons) + 1, len(bins) - 1))
-            # spk_mat[:] = np.nan
-
-            for iN, neur in enumerate(spks_clipped):
-                hist, edges = np.histogram(neur, bins, density=False)
-                neur_num = self.neurons[iN]
-                spk_mat[neur_num] = hist
-
-            np.save(binned_file, spk_mat)
+        else:
+            spk_mat = self._binner(spks, bins)
             if set_self_matrix:
                 self.spk_mat = spk_mat
                 return None
@@ -365,6 +480,7 @@ class RainierData:
         mean_factor = np.mean(spk_mat, axis=1)+cfactor
         spk_mat_norm = spk_mat/mean_factor[:, None]
 
+        self.norm_factor = mean_factor
         self.spk_mat_norm = spk_mat_norm
 
     def get_spike_rate(self):
@@ -393,6 +509,63 @@ class RainierData:
         chanpos = np.load(self.probedir / 'channel_positions.npy')
         return _bin_neurons_positions(chanpos[maxchans], xbins, ybins)
 
+def binner(neurons, spks, bins):
+    """
+    spike binner
+    Args:
+        neurons: list of unique neuron numbers corresponding to len of spks
+        spks: list of spike times for each neuron
+        bins: bin edges
+    """
+    spks_clipped = []
+    for spk_row in spks:
+        spk_row = spk_row[spk_row < bins[-1]]
+        spks_clipped.append(spk_row)
+
+    spk_mat = np.zeros((np.max(neurons) + 1, len(bins) - 1))
+    # spk_mat[:] = np.nan
+
+    for iN, neur in enumerate(spks_clipped):
+        hist, edges = np.histogram(neur, bins, density=False)
+        neur_num = neurons[iN]
+        spk_mat[neur_num] = hist
+    return spk_mat
+
+def separate_spikes(spk_time, spk_clus, sample_rate=3e4):
+    """
+    Given equal arrays of [spiketimes] and [spikeclusters]
+    Find which spike times belong to each unique neuron (cluster)
+
+    Uses spike_times and spike_clusters from loaded npyps
+    Assigns separated spikes to self.neurons and self.spikes
+
+    Args:
+        spike_times
+        spike_clusters
+        sample_rate (default 30 khz)
+
+    Returns:
+        neurons: list of unique neuron numbers corresponding to len of spks
+        spks: list of spike times for each neuron
+    """
+    neurons = np.unique(spk_clus)
+    spks = []
+    for neur in neurons:
+        ix = np.where(spk_clus == neur)
+        times = spk_time[ix]
+        spks.append(times)
+    spks = np.asarray(spks, dtype='object') / sample_rate
+    return neurons, spks
+
+def shuffle_isi(spk_times):
+    """
+    shuffle spikes whilst maintaining temporal structure
+    """
+    spk_diff = np.diff(spk_times)
+    spk_diff_shuffled = np.random.permutation(spk_diff)
+    spk_shuffle = np.cumsum(spk_diff_shuffled)
+
+    return spk_shuffle
 
 def _plot_drift_map(probedir, by_shank=False):
 
@@ -467,20 +640,20 @@ def _plot_drift_map(probedir, by_shank=False):
         plt.xlabel('time (s)')
         plt.ylabel('depth ($\mu$m)')
 
-def vis_resp_ttest(spkmat, stim_ixs, binsize_s, prestim_s, poststim_s):
+def vis_resp_ttest(spkmat, stim_ixs, binsize_s, prestim_ix, poststim_ix):
     """
     count up spikes before and after stim times
     run quick paired t-test
     """
-    prestim_ix = int(np.round(prestim_s/binsize_s))
-    poststim_ix = int(np.round(poststim_s/binsize_s))
+    # prestim_ix = int(np.round(prestim_s/binsize_s))
+    # poststim_ix = int(np.round(poststim_s/binsize_s))
 
     def prepostcounts(a):
         pres = []
         posts = []
         for i in stim_ixs:
             pre_count = np.sum(a[i+prestim_ix:i])
-            post_count = np.sum(a[i:i+poststim_ix])
+            post_count = np.sum(a[i+1:i+poststim_ix])
 
             pres.append(pre_count)
             posts.append(post_count)

@@ -252,7 +252,7 @@ def custom_reg_list(predictors, regs):
     return reg_out
 
 
-def rrr_optimize(ranks, regs, x_train, y_train, x_test, y_test):
+def rrr_optimize(ranks, regs, x_train, y_train, x_test, y_test, doPlot=False):
     """
     Attempts to optimize rrr params (regularization, rank)
     Args:
@@ -265,49 +265,56 @@ def rrr_optimize(ranks, regs, x_train, y_train, x_test, y_test):
     param_combos = list(itertools.product(ranks, regs))
     # and array to store results
     param_results = np.zeros((len(param_combos)))
-
-    # set up a figure to display results as they come in
-    im = plt.imshow(np.zeros((len(ranks), len(regs))),
-                    extent=[0, len(regs), ranks[-1], ranks[0]],
-                    clim=[0, 1], aspect='auto')
-    ax = plt.gca()
-    ax = ptAL.plotting.apply_heatmap_defaults(ax)
-    plt.ylabel('rank')
-    plt.xlabel('regularization')
-
-    reglabels = plt.xticks(rotation=45)[0][:-1]
-    reglabels_log = regs[reglabels.astype('int')]
-    reglabels_log_str = [f'{x:.0e}' for x in reglabels_log]
-
-    ax.set_xticks(reglabels)
-    ax.set_xticklabels(reglabels_log_str)
-
-    cb = ptAL.plotting.add_colorbar(ax)
-    cb.ax.set_ylabel('cross-validated variance explained')
-
-    dsp2 = display(display_id=True)
     results = np.zeros((len(ranks), len(regs)))
+    if doPlot:
+        # set up a figure to display results as they come in
+        im = plt.imshow(np.zeros((len(ranks), len(regs))),
+                        extent=[0, len(regs), ranks[-1], ranks[0]],
+                        clim=[0, 1], aspect='auto')
+        ax = plt.gca()
+        ax = ptAL.plotting.apply_heatmap_defaults(ax)
+        plt.ylabel('rank')
+        plt.xlabel('regularization')
+
+        reglabels = plt.xticks(rotation=45)[0][:-1]
+        reglabels_log = regs[reglabels.astype('int')]
+        reglabels_log_str = [f'{x:.0e}' for x in reglabels_log]
+
+        ax.set_xticks(reglabels)
+        ax.set_xticklabels(reglabels_log_str)
+
+        cb = ptAL.plotting.add_colorbar(ax)
+        cb.ax.set_ylabel('cross-validated variance explained')
+
+        dsp2 = display(display_id=True)
 
     for iReg, reg in enumerate(regs):
-        rrr = ReducedRankRegressor(x_train, y_train, rank='max', reg=reg)
-        rrr.fit()
+        try: # attempt to fix linalg error for certain regularization
+            rrr = ReducedRankRegressor(x_train, y_train, rank='max', reg=reg)
+            rrr.fit()
 
-        for iRank, rank in enumerate(ranks):
-            y_pred = rrr.predict(x_test, rank=rank)
-            score = score_r2(y_test, y_pred.T,
-                multioutput='variance_weighted')
-            results[iRank, iReg] = score
-            max_ix = np.unravel_index(np.argmax(results),
-                (len(ranks), len(regs)))
+            for iRank, rank in enumerate(ranks):
+                y_pred = rrr.predict(x_test, rank=rank)
+                score = score_r2(y_test, y_pred.T,
+                    multioutput='variance_weighted')
+                results[iRank, iReg] = score
+                max_ix = np.unravel_index(np.argmax(results),
+                    (len(ranks), len(regs)))
 
-            total_elapsed = (datetime.datetime.now() - start_time).total_seconds()
-            dsp2.update(f'elapsed: {total_elapsed/60:.2f} min')
+                total_elapsed = (datetime.datetime.now() - start_time).total_seconds()
 
-            ax.set_title(f'best: rank={ranks[max_ix[0]]}, reg={regs[max_ix[1]]:.2e}')
-            im.set_data(results)
-            im.set_clim(0, np.max(results)*1.2)
-            cb.ax.set_ylabel('cross-validated $R^2$')
-            clear_output(wait=True)
+                if doPlot:
+                    dsp2.update(f'elapsed: {total_elapsed/60:.2f} min')
+
+                    ax.set_title(f'best: rank={ranks[max_ix[0]]}, reg={regs[max_ix[1]]:.2e}')
+                    im.set_data(results)
+                    im.set_clim(0, np.max(results)*1.2)
+                    cb.ax.set_ylabel('cross-validated $R^2$')
+                    clear_output(wait=True)
+
+        except np.linalg.LinAlgError:
+            print(f'rank {rank}, reg {reg} failed to converge, moving on')
+            results[iRank, iReg] = -1
 
     return results, regs[max_ix[1]]
 
@@ -363,6 +370,17 @@ def score_r2(y_true, y_pred, multioutput=None):
     """
     score = sklearn.metrics.r2_score(y_true, y_pred, multioutput=multioutput)
     return score
+
+def score_d2(y_true, y_pred, power=1):
+    """
+    tweedie d2 score
+    input in [samples, features]
+    """
+    scores = []
+    for i in range(y_true.shape[1]):
+        score = sklearn.metrics.d2_tweedie_score(y_true[:, i], y_pred[:, i], power=power)
+        scores.append(score)
+    return np.array(scores)
 
 
 def score_var_explained(y_true, y_pred, multioutput=None):

@@ -15,14 +15,14 @@ import ipywidgets as widgets
 def get_default_colors():
     return plt.rcParams['axes.prop_cycle'].by_key()['color']
 
-def add_colorbar(ax, mappable=None, shrink=1):
+def add_colorbar(ax, mappable=None, shrink=1, pad=0.15):
     """
     wrapper function to add a properly scaled colorbar and apply
     styling defaults
 
     input ax object to add colorplot onto, returns colorbar object
     """
-    cax = make_colorbar_axes(ax)
+    cax = make_colorbar_axes(ax, pad=pad)
     if mappable is not None:
         cb = plt.colorbar(cax=cax, mappable=mappable, shrink=shrink)
     else:
@@ -31,12 +31,12 @@ def add_colorbar(ax, mappable=None, shrink=1):
     return cb
 
 
-def add_colorbar_space(ax):
+def add_colorbar_space(ax, pad=0.15):
     """
     since adding a colorbar to just one plot makes subplots uneven,
     add the same empty 'space' to other axes if desired
     """
-    cax = make_colorbar_axes(ax)
+    cax = make_colorbar_axes(ax, pad=pad)
     cax.axis('off')
     return cax
 
@@ -127,6 +127,50 @@ def apply_multiple_locator(ax, multiple_dict):
 
     return ax
 
+def plotSignificanceBracket(ax, x1, x2, y, h, pvalue, linewidth=1, fontsize='small'):
+    """
+    Plot a significance bracket on the given axes.
+
+    Parameters:
+    - ax: The matplotlib axes object to plot on.
+    - x1, x2: The x-coordinates of the bracket.
+    - y: The y-coordinate of the bracket.
+    - h: The height of the bracket.
+    - pvalue: The p-value used to determine the significance level.
+    - linewidth: The width of the bracket line (default: 1).
+    - fontsize: The font size of the significance text (default: 'small').
+
+    Returns:
+    None
+    """
+    if pvalue <= 0.0001:
+        text = '****'
+    elif pvalue <= 0.001:
+        text = '***'
+    elif pvalue <= 0.01:
+        text = '**'
+    elif pvalue <= 0.05:
+        text = '*'
+    else:
+        text = 'n.s.'
+
+    plt.plot([x1, x1, x2, x2], [y-h, y, y, y-h], lw=linewidth, c='k', clip_on=False)
+    plt.text((x1+x2)/2, y, text, ha='center', va='center', color='k', fontsize=fontsize)
+    
+def pvalue_to_stars(pvalue):
+    """
+    convert pvalue to stars
+    """
+    if pvalue <= 0.0001:
+        return '****'
+    elif pvalue <= 0.001:
+        return '***'
+    elif pvalue <= 0.01:
+        return '**'
+    elif pvalue <= 0.05:
+        return '*'
+    else:
+        return 'n.s.'
 
 def get_plottable_positions(positions, jitter_factor=1):
     """
