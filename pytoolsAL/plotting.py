@@ -15,14 +15,14 @@ import ipywidgets as widgets
 def get_default_colors():
     return plt.rcParams['axes.prop_cycle'].by_key()['color']
 
-def add_colorbar(ax, mappable=None, shrink=1, pad=0.15):
+def add_colorbar(ax, mappable=None, shrink=1, size='3%', pad=0.15):
     """
     wrapper function to add a properly scaled colorbar and apply
     styling defaults
 
     input ax object to add colorplot onto, returns colorbar object
     """
-    cax = make_colorbar_axes(ax, pad=pad)
+    cax = make_colorbar_axes(ax, pad=pad, size=size)
     if mappable is not None:
         cb = plt.colorbar(cax=cax, mappable=mappable, shrink=shrink)
     else:
@@ -31,12 +31,12 @@ def add_colorbar(ax, mappable=None, shrink=1, pad=0.15):
     return cb
 
 
-def add_colorbar_space(ax, pad=0.15):
+def add_colorbar_space(ax, size='3%', pad=0.15):
     """
     since adding a colorbar to just one plot makes subplots uneven,
     add the same empty 'space' to other axes if desired
     """
-    cax = make_colorbar_axes(ax, pad=pad)
+    cax = make_colorbar_axes(ax, pad=pad, size=size)
     cax.axis('off')
     return cax
 
@@ -103,6 +103,16 @@ def apply_heatmap_defaults(ax):
 
     return ax
 
+def detick_despine(ax):
+    """
+    remove ticks and spines from axis
+    """
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.spines['left'].set_visible(False)
+    ax.spines['bottom'].set_visible(False)
+    return ax
+
 
 def apply_multiple_locator(ax, multiple_dict):
     """
@@ -127,7 +137,13 @@ def apply_multiple_locator(ax, multiple_dict):
 
     return ax
 
-def plotSignificanceBracket(ax, x1, x2, y, h, pvalue, linewidth=1, fontsize='small'):
+def plotZeroUnityLines(c='k', ls='--', unity=True):
+    if unity:
+        plt.axline([0, 0], slope=1, c=c, ls=ls)
+    plt.axvline(0, c=c, ls=ls)
+    plt.axhline(0, c=c, ls=ls)
+
+def plotSignificanceBracket(ax, x1, x2, y, h, pvalue, linewidth=1, oneStarOnly=True, fontsize='small'):
     """
     Plot a significance bracket on the given axes.
 
@@ -143,19 +159,25 @@ def plotSignificanceBracket(ax, x1, x2, y, h, pvalue, linewidth=1, fontsize='sma
     Returns:
     None
     """
-    if pvalue <= 0.0001:
-        text = '****'
-    elif pvalue <= 0.001:
-        text = '***'
-    elif pvalue <= 0.01:
-        text = '**'
-    elif pvalue <= 0.05:
-        text = '*'
+    if oneStarOnly:
+        if pvalue <= 0.05:
+            text = '*'
+        else:
+            text = 'n.s.'
     else:
-        text = 'n.s.'
+        if pvalue <= 0.0001:
+            text = '****'
+        elif pvalue <= 0.001:
+            text = '***'
+        elif pvalue <= 0.01:
+            text = '**'
+        elif pvalue <= 0.05:
+            text = '*'
+        else:
+            text = 'n.s.'
 
     plt.plot([x1, x1, x2, x2], [y-h, y, y, y-h], lw=linewidth, c='k', clip_on=False)
-    plt.text((x1+x2)/2, y, text, ha='center', va='center', color='k', fontsize=fontsize)
+    plt.text((x1+x2)/2, y, text, ha='center', va='bottom', color='k', fontsize=fontsize)
     
 def pvalue_to_stars(pvalue):
     """
