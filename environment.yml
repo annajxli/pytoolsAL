@@ -1,21 +1,18 @@
 name: anna311
 channels:
   - conda-forge
-  - defaults
 dependencies:
   - python=3.11
   - pip
-
-  - imageio[ffmpeg]
   - imageio[ffmpeg]
   - ipympl
   - ipywidgets
   - jupyterlab
   - jupytext
-  - numpy
-  - numba
+  - numpy=2.2.6
+  - numexpr
   - matplotlib
-  - opencv-python
+  - opencv
   - pandas
   - scipy
   - scikit-learn
@@ -23,5 +20,6 @@ dependencies:
   - tifffile
 
   - pip:
+    - rastermap
     - -e git+https://github.com/annajxli/pytoolsAL.git#egg=pytoolsAL
     - -e git+https://github.com/cortex-lab/phylib.git#egg=phylib
