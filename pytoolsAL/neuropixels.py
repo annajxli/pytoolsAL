@@ -402,19 +402,26 @@ class RainierData:
         self.neurons = neurons
         self.spikes = spks
 
-    def _binner(self, spks, bins):
+    def _binner(self, spks, bins, collapse=False):
+        """
+        collapse: if False, use the cluster IDs as the row index
+        """
         spks_clipped = []
         for spk_row in spks:
             spk_row = spk_row[spk_row < bins[-1]]
             spks_clipped.append(spk_row)
 
-        spk_mat = np.zeros((np.max(self.neurons) + 1, len(bins) - 1), dtype=np.float32)
-        # spk_mat[:] = np.nan
-
-        for iN, neur in enumerate(spks_clipped):
-            hist, edges = np.histogram(neur, bins, density=False)
-            neur_num = self.neurons[iN]
-            spk_mat[neur_num] = hist
+        if collapse:
+            spk_mat = np.zeros((len(spks), len(bins) - 1), dtype=np.float32)
+            for iN, neur in enumerate(spks_clipped):
+                hist, edges = np.histogram(neur, bins, density=False)
+                spk_mat[iN] += hist
+        else:
+            spk_mat = np.zeros((np.max(self.neurons) + 1, len(bins) - 1), dtype=np.float32)
+            for iN, neur in enumerate(spks_clipped):
+                hist, edges = np.histogram(neur, bins, density=False)
+                neur_num = self.neurons[iN]
+                spk_mat[neur_num] = hist
         return spk_mat
 
     def bin_spikes(self, bins, binsize_s, loadsave=True,
@@ -509,26 +516,31 @@ class RainierData:
         chanpos = np.load(self.probedir / 'channel_positions.npy')
         return _bin_neurons_positions(chanpos[maxchans], xbins, ybins)
 
-def binner(neurons, spks, bins):
+def binner(neurons, spks, bins, collapse=False):
     """
     spike binner
     Args:
         neurons: list of unique neuron numbers corresponding to len of spks
         spks: list of spike times for each neuron
         bins: bin edges
+        collapse: if False, use the cluster IDs as the row index
     """
     spks_clipped = []
     for spk_row in spks:
         spk_row = spk_row[spk_row < bins[-1]]
         spks_clipped.append(spk_row)
 
-    spk_mat = np.zeros((np.max(neurons) + 1, len(bins) - 1))
-    # spk_mat[:] = np.nan
-
-    for iN, neur in enumerate(spks_clipped):
-        hist, edges = np.histogram(neur, bins, density=False)
-        neur_num = neurons[iN]
-        spk_mat[neur_num] = hist
+    if collapse:
+        spk_mat = np.zeros((len(spks), len(bins) - 1))
+        for iN, neur in enumerate(spks_clipped):
+            hist, edges = np.histogram(neur, bins, density=False)
+            spk_mat[iN] += hist
+    else:
+        spk_mat = np.zeros((np.max(neurons) + 1, len(bins) - 1))
+        for iN, neur in enumerate(spks_clipped):
+            hist, edges = np.histogram(neur, bins, density=False)
+            neur_num = neurons[iN]
+            spk_mat[neur_num] = hist
     return spk_mat
 
 def separate_spikes(spk_time, spk_clus, sample_rate=3e4):
