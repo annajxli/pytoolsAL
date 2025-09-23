@@ -67,15 +67,15 @@ def make_colorbar_axes(ax, pos='right', size='3%', pad=0.15):
     return cax
 
 
-def apply_colorbar_ticklabels(cb, ticklabels=None):
+def apply_colorbar_ticklabels(cb, ticklabels, pad=0.03):
     """
     make the colorbar ticks above and below it rather than on the side
 
     """
     cb.set_ticks([])
-    cb.ax.text(0.5, -0.01, ticklabels[1], transform=cb.ax.transAxes, 
+    cb.ax.text(0.5, -0.01-pad, ticklabels[0], transform=cb.ax.transAxes, 
         va='top', ha='center')
-    cb.ax.text(0.5, 1.0, ticklabels[0], transform=cb.ax.transAxes, 
+    cb.ax.text(0.5, 1.0+pad, ticklabels[1], transform=cb.ax.transAxes, 
         va='bottom', ha='center')
 
     return cb
